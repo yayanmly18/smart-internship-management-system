@@ -1,23 +1,21 @@
-exports.calculateFinalScore = (data) => {
-    const attendance = data.attendance || 0;
-    const weekly_report = data.weekly_report || 0;
-    const supervisor_score = data.supervisor_score || 0;
-    const company_score = data.company_score || 0;
+exports.calculateEligibility = (data) => {
+    const gpa = data.gpa || 0;
+    const semester = data.semester || 0;
+    const certificate_count = data.certificate_count || 0;
+    const organization_exp = data.organization_exp || 0;
 
-    const finalScore =
-        (attendance * 0.2) +
-        (weekly_report * 0.3) +
-        (supervisor_score * 0.2) +
-        (company_score * 0.3);
+    let score = 0;
 
-    let grade = "D";
+    if (gpa >= 3.5) score += 40;
+    else if (gpa >= 3.0) score += 25;
 
-    if (finalScore >= 85) grade = "A";
-    else if (finalScore >= 75) grade = "B";
-    else if (finalScore >= 60) grade = "C";
+    if (semester >= 5) score += 20;
+
+    score += certificate_count * 5;
+    score += organization_exp * 3;
 
     return {
-        final_score: Number(finalScore.toFixed(2)),
-        grade: grade
+        score,
+        eligible: score >= 60
     };
 };

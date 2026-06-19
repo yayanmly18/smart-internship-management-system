@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 
-const starlark = require("../services/starlark.service");
+const starlark = require("../engine/starlark.engine");
 const vrule = require("../services/vrule.service");
 const workflow = require("../services/workflow.service");
 const nats = require("../services/nats.service");
@@ -10,7 +10,7 @@ const audit = require("../services/audit.service");
 router.post("/register", async (req, res) => {
     const data = req.body;
 
-    const eligibility = starlark.calculateEligibility(data);
+    const eligibility = starlark.executeEligibility(data);
 
     const rule = await vrule.evaluate("vrule_eligibility_check", eligibility);
 
