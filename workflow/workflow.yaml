@@ -1,0 +1,139 @@
+system:
+  name: Smart Internship Management System
+
+event_flow:
+  start: InternshipSubmitted
+
+workflows:
+
+  # =========================
+  # 1. REGISTRATION
+  # =========================
+  - id: wf_registration
+    name: Internship Registration
+    trigger: InternshipSubmitted
+
+    steps:
+      - validate_input
+      - generate_internship_id
+      - save_to_database
+      - audit_log (detach)
+
+    output:
+      status: REGISTERED
+      next: EligibilityRequested
+
+
+  # =========================
+  # 2. ELIGIBILITY CHECK
+  # =========================
+  - id: wf_eligibility
+    name: Eligibility Assessment
+    trigger: EligibilityRequested
+
+    steps:
+      - fetch_student_data
+      - run_starlark_eligibility_score
+      - apply_vrule_eligibility_check
+      - save_result
+      - audit_log (detach)
+
+    output:
+      status: ELIGIBILITY_DONE
+      next: EligibilityCompleted
+
+
+  # =========================
+  # 3. SUPERVISOR APPROVAL
+  # =========================
+  - id: wf_approval
+    name: Supervisor Approval
+    trigger: EligibilityCompleted
+
+    steps:
+      - send_approval_request
+      - wait_supervisor_response
+      - apply_vrule_approval_requirement
+      - save_decision
+      - audit_log (detach)
+
+    output:
+      status: APPROVED_OR_REJECTED
+      next: SupervisorDecision
+
+
+  # =========================
+  # 4. COMPANY PLACEMENT
+  # =========================
+  - id: wf_placement
+    name: Company Placement Engine
+    trigger: SupervisorDecision
+
+    steps:
+      - fetch_company_list
+      - run_starlark_matching
+      - apply_vrule_company_matching
+      - assign_company
+      - publish_event
+
+    output:
+      status: COMPANY_ASSIGNED
+      next: CompanyAssigned
+
+
+  # =========================
+  # 5. WEEKLY MONITORING
+  # =========================
+  - id: wf_monitoring
+    name: Weekly Progress Monitoring
+    trigger: ProgressSubmitted
+
+    steps:
+      - validate_report
+      - apply_vrule_progress_compliance
+      - save_progress
+      - audit_log (detach)
+      - publish_event
+
+    output:
+      status: PROGRESS_VALIDATED
+      next: ProgressUpdated
+
+
+  # =========================
+  # 6. PERFORMANCE EVALUATION
+  # =========================
+  - id: wf_evaluation
+    name: Performance Evaluation
+    trigger: EvaluationRequested
+
+    steps:
+      - collect_all_data
+      - run_starlark_grading
+      - apply_vrule_performance_grading
+      - save_result
+      - publish_event
+
+    output:
+      status: EVALUATED
+      next: EvaluationCompleted
+
+
+  # =========================
+  # 7. CERTIFICATION
+  # =========================
+  - id: wf_certification
+    name: Certification & Completion
+    trigger: EvaluationCompleted
+
+    steps:
+      - verify_final_score
+      - apply_vrule_certificate_release
+      - generate_certificate
+      - save_certificate
+      - audit_log (detach)
+      - publish_event
+
+    output:
+      status: COMPLETED
+      next: InternshipCompleted
