@@ -1,0 +1,5 @@
+# dependency folder frontend
+frontend/node_modules/
+
+# dependency global (kalau ada)
+node_modules/
