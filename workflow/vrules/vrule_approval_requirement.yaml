@@ -1,0 +1,10 @@
+rule_id: vrule_approval_requirement
+
+condition:
+  eligibility_status: "ELIGIBLE"
+
+logic: AND
+
+action:
+  if_true: REQUEST_APPROVAL
+  if_false: REJECT

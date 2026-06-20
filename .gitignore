@@ -1,5 +1,14 @@
-# dependency folder frontend
+# frontend dependency
 frontend/node_modules/
 
-# dependency global (kalau ada)
+# backend dependency 
+backend/node_modules/
+
+# global dependency
 node_modules/
+
+# environment file
+.env
+
+# system files
+.DS_Store

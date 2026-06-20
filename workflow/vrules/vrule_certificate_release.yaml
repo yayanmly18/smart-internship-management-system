@@ -1,0 +1,11 @@
+rule_id: vrule_certificate_release
+
+condition:
+  final_score: ">= 75"
+  attendance: ">= 80"
+
+logic: AND
+
+action:
+  if_true: RELEASE_CERTIFICATE
+  if_false: HOLD_CERTIFICATE
