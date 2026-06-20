@@ -1,9 +1,11 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "Workflow-based Internship Management System using VFlow, VRule, Starlark Activity, and Event-Driven Architecture for registration, approval, monitoring, evaluation, and certification processes.",
+  "description": "Workflow-based Internship Management System",
   "main": "app.js",
   "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

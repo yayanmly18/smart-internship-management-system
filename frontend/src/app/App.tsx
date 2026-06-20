@@ -224,7 +224,7 @@ function Topbar({ title, subtitle, onLogout, role }: { title: string; subtitle?:
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginPage({ onLogin, onRegister }: { onLogin: (r: Role) => void; onRegister: () => void }) {
+function LoginPage({ onLogin, onRegister, login }: { onLogin: (r: Role) => void; onRegister: () => void; login: (email: string, password: string, role: Role) => Promise<any> }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -1731,6 +1731,64 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
 // ─── App Root ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [auth, setAuth] = useState<{ page: "login" | "register" | "app"; role: Role }>({ page: "login", role: "mahasiswa" });
+
+  const API_URL = "/api/internship";
+
+  const login = async (email: string, password: string, role: Role) => {
+  const res = await fetch(`${API_URL}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, role }),
+  });
+
+  if (!res.ok) throw new Error("Login gagal");
+
+  const data = await res.json();
+
+  setAuth({ page: "app", role });
+
+  return data;
+};
+
+  const register = async (payload: any) => {
+  const res = await fetch(`${API_URL}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) throw new Error("Register gagal");
+
+  return await res.json();
+};
+
+  const fetchDashboard = async (role: Role) => {
+  const res = await fetch(`${API_URL}/status?role=${role}`);
+  return await res.json();
+};
+
+  const uploadReport = async (file: File, week: number) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("week", String(week));
+
+  const res = await fetch(`${API_URL}/workflow/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  return await res.json();
+};
+
+  const sendFeedback = async (studentId: string, score: number, comment: string) => {
+  const res = await fetch(`${API_URL}/vrule/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ studentId, score, comment }),
+  });
+
+  return await res.json();
+};
 
   if (auth.page === "login") return <LoginPage onLogin={role => setAuth({ page: "app", role })} onRegister={() => setAuth({ page: "register", role: "mahasiswa" })} />;
   if (auth.page === "register") return <RegisterPage onBack={() => setAuth({ page: "login", role: "mahasiswa" })} />;
