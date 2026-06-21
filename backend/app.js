@@ -19,9 +19,11 @@ const workflowRoutes = require("./api/workflow.controller");
 const vruleRoutes = require("./api/vrule.controller");
 const starlarkRoutes = require("./api/starlark.controller");
 const eventRoutes = require("./api/event.controller");
-const authRoutes = require("./api/auth.controller");
+const authRoutes = require('./api/auth.routes');
+const auditRoutes = require('./api/audit.routes');
 
-app.use("/api/auth", authRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/auth', authRoutes);
 app.use("/api/internship", internshipRoutes);
 app.use("/api/workflow", workflowRoutes);
 app.use("/api/vrule", vruleRoutes);
