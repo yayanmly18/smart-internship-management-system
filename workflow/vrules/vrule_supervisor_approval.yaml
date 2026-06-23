@@ -1,0 +1,50 @@
+rule_id: vrule_supervisor_approval
+
+description: Approval akhir oleh Dosen Pembimbing (Supervisor) setelah verifikasi admin
+
+condition:
+  admin_verification_status: "ADMIN_VERIFIED"
+  supervisor_decision: "APPROVED"
+  supervisor_has_authority: "true"
+
+logic: AND
+
+action:
+  if_true: SUPERVISOR_APPROVED
+  if_false: REJECTED
+
+validation_rules:
+  - field: admin_verification_status
+    type: string
+    required: true
+    allowed_values: [ADMIN_VERIFIED, REJECTED]
+    description: Status verifikasi dari Admin Verification Workflow
+  
+  - field: supervisor_decision
+    type: string
+    required: true
+    allowed_values: [APPROVED, REJECTED]
+    description: Keputusan akhir dari Dosen Pembimbing
+    
+  - field: supervisor_has_authority
+    type: boolean
+    required: true
+    description: Verifikasi bahwa supervisor memiliki wewenang untuk mahasiswa tersebut
+
+rejection_reasons:
+  - ADMIN_VERIFICATION_NOT_PASSED
+  - SUPERVISOR_REJECTED
+  - SUPERVISOR_NOT_AUTHORIZED
+
+business_rules:
+  - rule: supervisor_must_be_assigned
+    description: Supervisor harus sudah ditugaskan sebelum approval
+    severity: ERROR
+  
+  - rule: admin_verification_must_pass
+    description: Admin verification harus lolos sebelum supervisor approval
+    severity: ERROR
+  
+  - rule: supervisor_cannot_approve_own_student
+    description: Supervisor tidak boleh approve mahasiswa yang menjadi kerabat/dekat
+    severity: WARNING

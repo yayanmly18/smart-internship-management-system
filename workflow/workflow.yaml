@@ -15,6 +15,9 @@ workflows:
 
     steps:
       - validate_input
+      - require_document_upload
+      - upload_documents
+      - validate_uploaded_files
       - generate_internship_id
       - save_to_database
       - audit_log (detach)
@@ -22,6 +25,10 @@ workflows:
     output:
       status: REGISTERED
       next: EligibilityRequested
+
+    on_incomplete:
+      status: INCOMPLETE_DOCUMENT
+      next: DocumentUploadRequired
 
 
   # =========================
@@ -44,22 +51,84 @@ workflows:
 
 
   # =========================
-  # 3. SUPERVISOR APPROVAL
+  # 3. ADMIN VERIFICATION
   # =========================
-  - id: wf_approval
-    name: Supervisor Approval
+  - id: wf_admin_verification
+    name: Admin Verification
     trigger: EligibilityCompleted
+
+    steps:
+      - fetch_uploaded_documents
+      - review_documents
+      - review_academic_data
+      - review_administrative_requirements
+      - run_starlark_admin_verification
+      - apply_vrule_admin_verification
+      - save_verification_result
+      - audit_log (detach)
+      - publish_event
+
+    output:
+      status: ADMIN_VERIFIED
+      next: AdminVerificationCompleted
+
+    on_reject:
+      status: REJECTED
+      next: AdminVerificationRejected
+
+    on_revision_required:
+      status: REVISION_REQUIRED
+      next: DocumentRevisionRequested
+
+
+  # =========================
+  # 3.1 DOCUMENT REVISION
+  # =========================
+  - id: wf_document_revision
+    name: Document Revision
+    trigger: DocumentRevisionRequested
+
+    steps:
+      - notify_student_revision
+      - wait_student_upload
+      - validate_revised_documents
+      - run_starlark_document_validation
+      - apply_vrule_document_validation
+      - save_revision_result
+      - audit_log (detach)
+      - publish_event
+
+    output:
+      status: REVISION_SUBMITTED
+      next: EligibilityRequested
+
+    on_revision_rejected:
+      status: REJECTED
+      next: AdminVerificationRejected
+
+
+  # =========================
+  # 4. SUPERVISOR APPROVAL
+  # =========================
+  - id: wf_supervisor_approval
+    name: Supervisor Approval
+    trigger: AdminVerificationCompleted
 
     steps:
       - send_approval_request
       - wait_supervisor_response
-      - apply_vrule_approval_requirement
+      - apply_vrule_supervisor_approval
       - save_decision
       - audit_log (detach)
+      - publish_event
 
     output:
       status: APPROVED_OR_REJECTED
       next: SupervisorDecision
+
+    on_reject:
+      status: REJECTED
+      next: SupervisorDecisionRejected
 
 
   # =========================

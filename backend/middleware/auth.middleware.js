@@ -1,12 +1,25 @@
 module.exports = (req, res, next) => {
-    const token = req.headers.authorization;
-
-    if (!token) {
-        return res.status(401).json({
-            success: false,
-            message: "Unauthorized"
-        });
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    next();
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const token = parts[1];
+    const jwt = require('jsonwebtoken');
+    // Harus sinkron dengan secret yang dipakai saat sign token di auth.controller.js
+    const secret = process.env.JWT_SECRET || 'devsecret';
+
+
+    try {
+        const payload = jwt.verify(token, secret);
+        req.user = payload;
+        next();
+    } catch (err) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
 };

@@ -1,0 +1,120 @@
+rule_id: vrule_document_validation
+
+description: Validasi file dokumen yang diupload oleh mahasiswa
+
+condition:
+  required_documents_uploaded: "true"
+  file_formats_valid: "true"
+  file_sizes_valid: "true"
+  document_quality_check: "PASS"
+
+logic: AND
+
+action:
+  if_true: VALID
+  if_false: INVALID
+
+validation_rules:
+  - field: required_documents_uploaded
+    type: boolean
+    required: true
+    description: Semua dokumen wajib sudah diupload
+    
+  - field: file_formats_valid
+    type: boolean
+    required: true
+    description: Format file sesuai (PDF, JPG, PNG, DOCX)
+    
+  - field: file_sizes_valid
+    type: boolean
+    required: true
+    description: Ukuran file tidak melebihi batas maksimal
+    
+  - field: document_quality_check
+    type: string
+    required: true
+    allowed_values: [PASS, FAIL, REVIEW_REQUIRED]
+    description: Hasil penilaian kualitas dokumen
+
+required_documents:
+  - document_type: krs
+    display_name: Kartu Rencana Studi (KRS)
+    required: true
+    max_size_mb: 5
+    allowed_formats: [PDF, JPG, PNG]
+    description: KRS semester berjalan
+    
+  - document_type: transcript
+    display_name: Transkrip Nilai
+    required: true
+    max_size_mb: 5
+    allowed_formats: [PDF, JPG, PNG]
+    description: Transkrip nilai lengkap
+    
+  - document_type: internship_letter
+    display_name: Surat Pengantar Magang
+    required: true
+    max_size_mb: 3
+    allowed_formats: [PDF, JPG, PNG]
+    description: Surat pengantar dari prodi/jurusan
+    
+  - document_type: cv
+    display_name: Curriculum Vitae (CV)
+    required: true
+    max_size_mb: 3
+    allowed_formats: [PDF, DOCX, JPG, PNG]
+    description: CV mahasiswa
+    
+  - document_type: portfolio
+    display_name: Portofolio
+    required: false
+    max_size_mb: 10
+    allowed_formats: [PDF, DOCX, ZIP]
+    description: Portofolio karya/proyek (opsional)
+
+file_validation_rules:
+  max_total_size_mb: 25
+  max_files_per_type: 1
+  virus_scan_required: true
+  metadata_preservation: true
+
+quality_checks:
+  - check: document_readability
+    description: Dokumen dapat dibaca dengan jelas
+    severity: ERROR
+    
+  - check: document_completeness
+    description: Semua halaman/isi dokumen terupload
+    severity: ERROR
+    
+  - check: document_authenticity
+    description: Dokumen terlihat asli (tidak di-edit)
+    severity: WARNING
+    
+  - check: document_relevance
+    description: Dokumen sesuai dengan persyaratan
+    severity: ERROR
+
+rejection_reasons:
+  - MISSING_REQUIRED_DOCUMENT
+  - INVALID_FILE_FORMAT
+  - FILE_SIZE_EXCEEDED
+  - DOCUMENT_NOT_READABLE
+  - DOCUMENT_INCOMPLETE
+  - DOCUMENT_NOT_AUTHENTIC
+  - DOCUMENT_NOT_RELEVANT
+  - TOTAL_SIZE_EXCEEDED
+  - VIRUS_DETECTED
+
+revision_requirements:
+  - action: REPLACE_DOCUMENT
+    description: Ganti dokumen dengan yang baru
+    
+  - action: ADD_DOCUMENT
+    description: Tambah dokumen yang belum diupload
+    
+  - action: IMPROVE_QUALITY
+    description: Perbaiki kualitas dokumen (resolusi, pencahayaan, dll)
+    
+  - action: CORRECT_CONTENT
+    description: Perbaiki isi dokumen yang salah
