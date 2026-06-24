@@ -5,21 +5,25 @@ Untuk menjalankan Smart Internship Management System di lingkungan lokal, pastik
 1. Menjalankan Frontend
 
 
-cd frontend
+  cd frontend
 
+  npm install
 
-npm install
-npm run dev
+  npm run dev
 
 2. Menjalankan Backend
 
-cd backend
-npm install
-npm run dev
+  cd backend
+  
+  npm install
+  
+  npm run dev
 
 Sistem menyediakan akun admin default untuk keperluan testing:
 
 Email: admin@example.com
+
 Password: adminpass
+
 
 ⚠️ Disarankan untuk mengubah kredensial ini pada lingkungan produksi demi keamanan sistem.
