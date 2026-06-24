@@ -29,8 +29,24 @@ router.post("/login", async (req, res) => {
         }
 
         const { password: _p, ...user } = row;
+
+        // Get internship data if exists (for mahasiswa role)
+        let internship = null;
+        if (user.role === 'mahasiswa') {
+            internship = await db.get(
+                `SELECT id, status, progress, company, pembimbing_email
+                 FROM internships WHERE user_email = ? ORDER BY created_at DESC LIMIT 1`,
+                [user.email]
+            );
+        }
+
+        const userData = {
+            ...user,
+            internship: internship || null
+        };
+
         const token = jwt.sign({ id: user.id, role: user.role }, secret, { expiresIn: '8h' });
-        res.json({ success: true, message: "Login berhasil", data: user, token });
+        res.json({ success: true, message: "Login berhasil", data: userData, token });
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, message: "Login error" });

@@ -151,7 +151,6 @@ router.get('/mahasiswa/status', authMiddleware, async (req, res) => {
       [user.email]
     );
 
-    // Get pembimbing info if assigned
     let pembimbingInfo = null;
     if (internship?.pembimbing_email) {
       pembimbingInfo = await db.get(
@@ -160,7 +159,6 @@ router.get('/mahasiswa/status', authMiddleware, async (req, res) => {
       );
     }
 
-    // Build stages based on actual data
     const stages = [
       {
         label: 'Pendaftaran Dikirim',
@@ -261,20 +259,16 @@ router.get('/mahasiswa/evaluation', authMiddleware, async (req, res) => {
       [user.email]
     );
 
-    // Get all feedbacks for this student
     const feedbacks = await db.all(
       `SELECT score, comment, created_at FROM feedbacks
        WHERE student_id = ? ORDER BY created_at DESC`,
       [user.nim || String(user.id)]
     );
 
-    // Calculate component scores (in a real system these would come from separate tables)
-    // Here we derive from available feedback data
     const avgFeedbackScore = feedbacks.length > 0
       ? Math.round(feedbacks.reduce((s, f) => s + (f.score || 0), 0) / feedbacks.length)
       : 0;
 
-    // Use real data if available, otherwise provide defaults based on status
     const components = [
       {
         label: 'Kehadiran & Kedisiplinan',
@@ -306,13 +300,11 @@ router.get('/mahasiswa/evaluation', authMiddleware, async (req, res) => {
       },
     ];
 
-    // Weighted average
     const totalWeight = components.reduce((s, c) => s + c.weight, 0);
     const weightedScore = totalWeight > 0
       ? Math.round(components.reduce((s, c) => s + (c.score * c.weight) / totalWeight, 0))
       : 0;
 
-    // Grade mapping
     let grade = '-';
     if (weightedScore >= 85) grade = 'A';
     else if (weightedScore >= 75) grade = 'B';
@@ -370,7 +362,6 @@ router.get('/mahasiswa/certificate', authMiddleware, async (req, res) => {
       [user.email]
     );
 
-    // Check requirements
     const reportCount = internship ? await db.get(
       'SELECT COUNT(*) as count FROM reports WHERE internship_id = ?',
       [internship.id]
@@ -416,7 +407,7 @@ router.get('/mahasiswa/certificate', authMiddleware, async (req, res) => {
 });
 
 // ================================================================
-// PEMBIMBING FEEDBACK - Pending feedback list
+// PEMBIMBING - Pending feedback & student reports
 // ================================================================
 router.get('/pembimbing/pending-feedback', authMiddleware, async (req, res) => {
   try {
@@ -433,9 +424,8 @@ router.get('/pembimbing/pending-feedback', authMiddleware, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
-    // Get student internships for this pembimbing
     const students = await db.all(
-      `SELECT i.id as internshipId, i.user_email, i.status, i.progress,
+      `SELECT i.id as internshipId, i.user_email, i.status, i.progress, i.nim,
               us.name as studentName, us.nim as studentNim
        FROM internships i
        LEFT JOIN users us ON us.email = i.user_email
@@ -444,35 +434,64 @@ router.get('/pembimbing/pending-feedback', authMiddleware, async (req, res) => {
       [pembimbing.email]
     );
 
-    // Get latest unpaid reports for each student
     const pendingFeedback = [];
+    const totalWeeks = 8;
+
     for (const s of students) {
+      // Ambil semua report per minggu untuk internship ini
       const reports = await db.all(
-        `SELECT r.id, r.week, r.note, r.created_at
+        `SELECT r.id, r.week, r.note, r.file_path, r.created_at
          FROM reports r WHERE r.internship_id = ?
-         ORDER BY r.week DESC LIMIT 3`,
+         ORDER BY r.week ASC`,
         [s.internshipId]
       );
 
-      for (const r of reports) {
-        // Check if feedback already exists for this report
-        const existingFeedback = await db.get(
-          'SELECT id FROM feedbacks WHERE student_id = ? AND comment LIKE ?',
-          [s.studentNim || String(s.user_email), `%${r.week ? `Minggu ${r.week}` : ''}%`]
-        );
+      const reportByWeek = new Map(reports.map(r => [Number(r.week), r]));
 
-        if (!existingFeedback) {
-          pendingFeedback.push({
-            internshipId: s.internshipId,
-            studentId: s.studentNim || s.user_email,
-            studentName: s.studentName || '-',
-            week: r.week,
-            date: new Date(r.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-            excerpt: r.note ? r.note.substring(0, 150) : 'Laporan mingguan',
-          });
+      // Ambil semua feedback untuk student ini pada internship ini
+      const feedbacks = await db.all(
+        `SELECT f.id, f.score, f.comment, f.created_at
+         FROM feedbacks f
+         WHERE f.student_id = ? AND f.internship_id = ?
+         ORDER BY f.created_at DESC`,
+        [s.studentNim || String(s.user_email), s.internshipId]
+      );
+
+      // Index feedback per minggu berdasarkan format komentar: "... (Minggu X)"
+      const feedbackByWeek = new Map();
+      for (const f of feedbacks) {
+        const match = (f.comment || '').match(/\(Minggu (\d+)\)/);
+        if (match) {
+          const w = Number(match[1]);
+          if (!feedbackByWeek.has(w)) {
+            feedbackByWeek.set(w, f); // feedback terbaru untuk minggu tersebut
+          }
         }
       }
+
+      // Buat slot minggu 1..8 untuk monitoring/persentase yang konsisten
+      for (let w = 1; w <= totalWeeks; w++) {
+        const r = reportByWeek.get(w);
+        const f = feedbackByWeek.get(w);
+
+        pendingFeedback.push({
+          internshipId: s.internshipId,
+          studentId: s.studentNim || s.user_email,
+          studentName: s.studentName || '-',
+          week: w,
+          hasReport: !!r,
+          date: r?.created_at
+            ? new Date(r.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+            : null,
+          excerpt: r?.note ? r.note.substring(0, 200) : (r ? 'Laporan mingguan' : 'Belum mengirim laporan'),
+          fileName: r?.file_path ? require('path').basename(r.file_path) : null,
+          hasFeedback: !!f,
+          existingScore: f?.score ?? null,
+          existingComment: f?.comment ? f.comment.replace(/\s*\(Minggu \d+\)\s*$/, '') : null,
+        });
+      }
     }
+
 
     res.json({
       success: true,
@@ -481,6 +500,97 @@ router.get('/pembimbing/pending-feedback', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Failed to get pending feedback' });
+  }
+});
+
+// ================================================================
+// PEMBIMBING - Send feedback for a specific report
+// ================================================================
+router.post('/pembimbing/send-feedback', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'pembimbing') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const { studentId, internshipId, week, score, comment } = req.body;
+    if (!studentId || score === undefined || score === null) {
+      return res.status(400).json({ success: false, message: 'studentId dan score diperlukan' });
+    }
+
+    // Save feedback with week reference in comment
+    const feedbackComment = comment 
+      ? `${comment} (Minggu ${week || '?'})`
+      : `Feedback untuk laporan minggu ${week || '?'}`;
+
+    const result = await db.run(
+      'INSERT INTO feedbacks (student_id, internship_id, score, comment) VALUES (?,?,?,?)',
+      [String(studentId), internshipId || null, Number(score), feedbackComment]
+    );
+
+    res.json({
+      success: true,
+      message: `Feedback untuk minggu ${week || ''} berhasil dikirim`,
+      data: { id: result.id, studentId, score, week }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ================================================================
+// MAHASISWA - Get feedback on reports
+// ================================================================
+router.get('/mahasiswa/feedbacks', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'mahasiswa') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const user = await db.get('SELECT id, nim, email FROM users WHERE id = ?', [req.user.id]);
+    if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
+
+    const internship = await db.get(
+      'SELECT id FROM internships WHERE user_email = ? ORDER BY created_at DESC LIMIT 1',
+      [user.email]
+    );
+
+    if (!internship) {
+      return res.json({ success: true, data: { feedbacks: [] } });
+    }
+
+    const feedbacks = await db.all(
+      `SELECT f.id, f.score, f.comment, f.created_at
+       FROM feedbacks f WHERE f.student_id = ? OR f.internship_id = ?
+       ORDER BY f.created_at DESC`,
+      [user.nim || String(user.id), internship.id]
+    );
+
+    // Parse week from comment if present
+    const mapped = feedbacks.map(f => {
+      let week = null;
+      let cleanComment = f.comment || '';
+      const weekMatch = cleanComment.match(/\(Minggu (\d+)\)/);
+      if (weekMatch) {
+        week = parseInt(weekMatch[1]);
+        cleanComment = cleanComment.replace(/\(Minggu \d+\)/, '').trim();
+      }
+      return {
+        id: f.id,
+        score: f.score,
+        comment: cleanComment,
+        week,
+        createdAt: f.created_at,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: { feedbacks: mapped }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -512,7 +622,6 @@ router.get('/pembimbing/schedule', authMiddleware, async (req, res) => {
       [pembimbing.email]
     );
 
-    // Generate schedule entries based on student status
     const schedules = [];
     for (const s of students) {
       if (s.status === 'aktif' || s.status === 'pending') {
@@ -546,6 +655,204 @@ router.get('/pembimbing/schedule', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Failed to get schedule' });
+  }
+});
+
+// ================================================================
+// MAHASISWA - Upload Weekly Report with File
+// ================================================================
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const uploadsDir = path.resolve(__dirname, '..', 'uploads', 'reports');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const reportStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '_' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, `report_${uniqueSuffix}${ext}`);
+  }
+});
+
+const uploadReportFile = multer({
+  storage: reportStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png', '.zip'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipe file tidak diizinkan. Gunakan: PDF, DOCX, JPG, PNG, ZIP'));
+    }
+  }
+}).single('report_file');
+
+router.post('/mahasiswa/upload-report', authMiddleware, (req, res) => {
+  uploadReportFile(req, res, async (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ success: false, message: 'File terlalu besar. Maksimal 10MB.' });
+        return res.status(400).json({ success: false, message: err.message });
+      }
+      return res.status(400).json({ success: false, message: err.message });
+    }
+
+    try {
+      if (!req.user || req.user.role !== 'mahasiswa') {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+
+      const { week, note } = req.body;
+      if (!week) {
+        return res.status(400).json({ success: false, message: 'Minggu laporan (week) diperlukan' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'File laporan harus diupload' });
+      }
+
+      const user = await db.get('SELECT id, email FROM users WHERE id = ?', [req.user.id]);
+      if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
+
+      const internship = await db.get(
+        'SELECT id, status FROM internships WHERE user_email = ? ORDER BY created_at DESC LIMIT 1',
+        [user.email]
+      );
+      if (!internship) return res.status(400).json({ success: false, message: 'Anda belum terdaftar magang' });
+
+      const weekNum = Number(week);
+
+      const existing = await db.get(
+        'SELECT id FROM reports WHERE internship_id = ? AND week = ?',
+        [internship.id, weekNum]
+      );
+      if (existing) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Laporan minggu ${weekNum} sudah pernah diupload. Tidak dapat mengupload lagi.` 
+        });
+      } else {
+        await db.run(
+          'INSERT INTO reports (internship_id, week, note, file_path) VALUES (?,?,?,?)',
+          [internship.id, weekNum, note || null, req.file.path]
+        );
+      }
+
+      const reportCount = await db.get(
+        'SELECT COUNT(*) as count FROM reports WHERE internship_id = ?',
+        [internship.id]
+      );
+      const newProgress = Math.min(100, Math.round(((reportCount?.count || 0) / 8) * 100));
+      const newStatus = newProgress >= 100 ? 'selesai' : internship.status === 'aktif' || internship.status === 'selesai' ? internship.status : 'aktif';
+
+      await db.run(
+        'UPDATE internships SET progress = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [newProgress, newStatus, internship.id]
+      );
+
+      const auditService = require('../services/audit.service');
+      await auditService.log({
+        action: 'WEEKLY_REPORT_UPLOADED',
+        data: { internshipId: internship.id, week: weekNum, file: req.file.filename, progress: newProgress },
+        internshipId: internship.id
+      });
+
+      res.json({
+        success: true,
+        message: `Laporan minggu ${weekNum} berhasil diupload`,
+        data: {
+          week: weekNum,
+          progress: newProgress,
+          status: newStatus,
+          file: req.file.filename,
+          totalReports: reportCount?.count || 0
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ success: false, message: err.message || 'Gagal upload laporan' });
+    }
+  });
+});
+
+// GET /api/dashboard/mahasiswa/reports - Get student's report history with feedbacks
+router.get('/mahasiswa/reports', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'mahasiswa') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const user = await db.get('SELECT id, email, nim FROM users WHERE id = ?', [req.user.id]);
+    if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
+
+    const internship = await db.get(
+      'SELECT id, progress, status FROM internships WHERE user_email = ? ORDER BY created_at DESC LIMIT 1',
+      [user.email]
+    );
+    if (!internship) {
+      return res.json({ success: true, data: { reports: [], feedbacks: [], progress: 0, status: 'pending' } });
+    }
+
+    const reports = await db.all(
+      'SELECT id, week, note, file_path, created_at FROM reports WHERE internship_id = ? ORDER BY week ASC',
+      [internship.id]
+    );
+
+    // Get feedbacks for this student
+    const feedbacks = await db.all(
+      `SELECT f.id, f.score, f.comment, f.created_at
+       FROM feedbacks f WHERE f.student_id = ? OR f.internship_id = ?
+       ORDER BY f.created_at DESC`,
+      [user.nim || String(user.id), internship.id]
+    );
+
+    // Map feedbacks with week info
+    const mappedFeedbacks = feedbacks.map(f => {
+      let week = null;
+      let cleanComment = f.comment || '';
+      const weekMatch = cleanComment.match(/\(Minggu (\d+)\)/);
+      if (weekMatch) {
+        week = parseInt(weekMatch[1]);
+        cleanComment = cleanComment.replace(/\(Minggu \d+\)/, '').trim();
+      }
+      return {
+        id: f.id,
+        score: f.score,
+        comment: cleanComment,
+        week,
+        createdAt: f.created_at,
+      };
+    });
+
+    const mappedReports = reports.map(r => ({
+      id: r.id,
+      week: r.week,
+      note: r.note,
+      fileName: r.file_path ? path.basename(r.file_path) : null,
+      uploadedAt: r.created_at,
+      feedback: mappedFeedbacks.find(f => f.week === r.week) || null,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        reports: mappedReports,
+        feedbacks: mappedFeedbacks,
+        progress: internship.progress || 0,
+        status: internship.status || 'pending',
+        totalReports: mappedReports.length,
+        totalWeeks: 8,
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

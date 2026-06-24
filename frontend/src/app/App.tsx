@@ -361,19 +361,25 @@ const mNav = [
 function MSidebar({ page, setPage, collapsed, setCollapsed }: { page: MahasiswaPage; setPage: (p: MahasiswaPage) => void; collapsed: boolean; setCollapsed: (v: boolean) => void }) {
   return (
     <aside className={cn("flex flex-col h-screen bg-slate-900 transition-all duration-300 flex-shrink-0", collapsed ? "w-[60px]" : "w-56")}>
-      <div className="flex items-center gap-2.5 px-3 h-16 border-b border-white/5 flex-shrink-0">
-        <div className="w-8 h-8 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0">
-          <GraduationCap size={17} className="text-white" />
-        </div>
-        {!collapsed && (
-          <div className="flex-1 min-w-0">
-            <p className="text-white font-extrabold text-sm leading-none" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Nextern</p>
-            <p className="text-slate-400 text-[11px] mt-0.5">Mahasiswa</p>
+      <div className="flex items-center justify-center h-16 border-b border-white/5 flex-shrink-0">
+        {!collapsed ? (
+          <div className="flex items-center gap-2.5 px-3 w-full">
+            <div className="w-8 h-8 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0">
+              <GraduationCap size={17} className="text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-extrabold text-sm leading-none" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Nextern</p>
+              <p className="text-slate-400 text-[11px] mt-0.5">Mahasiswa</p>
+            </div>
+            <button onClick={() => setCollapsed(!collapsed)} className="text-slate-500 hover:text-white transition-colors">
+              <Menu size={15} />
+            </button>
           </div>
+        ) : (
+          <button onClick={() => setCollapsed(!collapsed)} className="text-slate-500 hover:text-white transition-colors">
+            <Menu size={15} />
+          </button>
         )}
-        <button onClick={() => setCollapsed(!collapsed)} className={cn("text-slate-500 hover:text-white transition-colors", collapsed && "mx-auto")}>
-          <Menu size={15} />
-        </button>
       </div>
       <nav className="flex-1 py-3 px-2 overflow-y-auto space-y-0.5">
         {!collapsed && <p className="text-slate-600 text-[10px] font-bold px-2 py-1 uppercase tracking-widest">Menu</p>}
@@ -546,7 +552,32 @@ function MDashboard({ setPage, currentUser }: { setPage: (p: MahasiswaPage) => v
 
 // Mahasiswa — Registration (4-step wizard)
 function MRegistration({ setPage, submitInternship, currentUser }: { setPage: (p: MahasiswaPage) => void; submitInternship: (payload: any) => Promise<any>; currentUser: any }) {
+  const [registrationLocked, setRegistrationLocked] = useState(false);
+  const [registrationReason, setRegistrationReason] = useState<string | null>(null);
+
   const [step, setStep] = useState(1);
+
+
+  useEffect(() => {
+    const internship = currentUser?.internship;
+    if (!internship) return;
+
+    const status = String(internship.status || '').toLowerCase();
+    const reasonMap: Record<string, string> = {
+      'aktif': 'Anda sudah diterima magang dan sedang aktif, tidak dapat mendaftar lagi.',
+      'diterima': 'Anda sudah diterima magang, tidak dapat mendaftar lagi.',
+      'selesai': 'Anda sudah menyelesaikan program magang, tidak dapat mendaftar lagi.',
+      'seleksi': 'Pendaftaran Anda sedang dalam proses seleksi, tidak dapat mendaftar ulang.',
+      'pending': 'Pendaftaran Anda masih menunggu review, tidak dapat mendaftar ulang.',
+      'ditolak': 'Pendaftaran Anda sebelumnya ditolak. Silakan hubungi admin untuk informasi lebih lanjut.',
+    };
+
+    if (reasonMap[status]) {
+      setRegistrationLocked(true);
+      setRegistrationReason(reasonMap[status]);
+    }
+  }, [currentUser]);
+
 
   // Step 1 state
   const [nama, setNama] = useState("");
@@ -638,6 +669,42 @@ function MRegistration({ setPage, submitInternship, currentUser }: { setPage: (p
     catch (err: any) { alert(err?.message || 'Gagal'); }
     finally { setSubmitting(false); }
   };
+
+  if (registrationLocked) {
+    return (
+      <div className="max-w-xl mx-auto space-y-4">
+        <div className="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-6 text-white">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-extrabold" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Pendaftaran ditutup</h3>
+              <p className="text-sm text-emerald-100 mt-1">{registrationReason ?? "Anda sudah diterima."}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 p-6">
+          <p className="text-sm text-slate-600">
+            Silakan cek <span className="font-bold text-slate-900">Status Magang</span> untuk perkembangan proses.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPage('status')}
+              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700"
+            >
+              Lihat Status
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage('dashboard')}
+              className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50"
+            >
+              Kembali ke Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="max-w-xl mx-auto space-y-4">
@@ -888,50 +955,235 @@ function MStatus() {
   );
 }
 
-// Mahasiswa — Monitoring
-function MMonitoring({ uploadReport }: { uploadReport: (week: number, note: string) => Promise<any> }) {
-  const [dragging, setDragging] = useState(false);
-  const [uploaded, setUploaded] = useState(false);
+// Mahasiswa — Monitoring with real file upload
+function MMonitoring({ currentUser }: { currentUser: any }) {
+  const [week, setWeek] = useState<number>(1);
+  const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [reports, setReports] = useState<any[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState('');
+  const [totalWeeks, setTotalWeeks] = useState(8);
+  const [uploadedWeeks, setUploadedWeeks] = useState<number[]>([]);
 
-  const handleSendReport = async () => {
-    if (!uploaded || !note.trim()) { alert('Silakan upload file dan berikan catatan'); return; }
+  // Fetch existing reports
+  const fetchReports = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const headers: any = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch('/api/dashboard/mahasiswa/reports', { headers });
+      if (!res.ok) throw new Error('Failed');
+      const json = await res.json();
+      if (json.success && json.data) {
+        setReports(json.data.reports || []);
+        setProgress(json.data.progress || 0);
+        setStatus(json.data.status || '');
+        setTotalWeeks(json.data.totalWeeks || 8);
+        setUploadedWeeks((json.data.reports || []).map((r: any) => r.week));
+      }
+    } catch (e) {
+      console.error('Failed to fetch reports', e);
+    }
+  };
+
+  useEffect(() => { fetchReports(); }, []);
+
+  // Auto-select next available week
+  useEffect(() => {
+    if (reports.length > 0) {
+      const uploaded = reports.map(r => r.week);
+      for (let w = 1; w <= totalWeeks; w++) {
+        if (!uploaded.includes(w)) {
+          setWeek(w);
+          break;
+        }
+      }
+    }
+  }, [reports, totalWeeks]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) { alert('Pilih file laporan terlebih dahulu'); return; }
+
     setUploading(true);
-    try { await uploadReport(7, note); alert('Laporan berhasil dikirim'); setUploaded(false); setNote(''); }
-    catch (err: any) { alert(err?.message || 'Gagal'); }
-    finally { setUploading(false); }
+    try {
+      const token = localStorage.getItem('token');
+      const headers: any = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const fd = new FormData();
+      fd.append('week', String(week));
+      fd.append('note', note);
+      fd.append('report_file', file);
+
+      const res = await fetch('/api/dashboard/mahasiswa/upload-report', {
+        method: 'POST',
+        headers,
+        body: fd,
+      });
+      if (!res.ok) { const t = await res.text(); throw new Error(t || 'Gagal upload'); }
+      const json = await res.json();
+
+      if (json.success) {
+        alert(`Laporan minggu ${week} berhasil diupload!`);
+        setFile(null);
+        setNote('');
+        fetchReports(); // Refresh list
+      } else {
+        alert(json.message || 'Gagal upload');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Gagal upload laporan');
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-slate-100 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-slate-900" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Upload Laporan</h3>
+    <div className="max-w-2xl mx-auto space-y-4">
+      {/* Progress overview */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-5 text-white">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="font-extrabold text-lg" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Monitoring Laporan</h3>
+            <p className="text-blue-200 text-sm">Upload laporan mingguan Anda</p>
+          </div>
+          <span className="text-3xl font-black">{progress}%</span>
         </div>
-        <div onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
-          onDrop={e => { e.preventDefault(); setDragging(false); setUploaded(true); }} onClick={() => setUploaded(!uploaded)}
-          className={cn("border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all",
-            dragging ? "border-blue-500 bg-blue-50" : uploaded ? "border-emerald-400 bg-emerald-50" : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/40")}>
-          {uploaded ? (
-            <div className="space-y-2">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto"><CheckCircle size={24} className="text-emerald-600" /></div>
-              <p className="text-sm font-bold text-emerald-700">laporan_minggu7.pdf</p>
-              <p className="text-xs text-emerald-500">1.2 MB · Siap dikirim</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto"><Upload size={22} className="text-slate-400" /></div>
-              <p className="text-sm font-semibold text-slate-600">Seret file atau klik untuk memilih</p>
-              <p className="text-xs text-slate-400">PDF, DOCX · Maks. 10 MB</p>
-            </div>
-          )}
+        <div className="h-2.5 bg-white/15 rounded-full overflow-hidden">
+          <div className="h-full bg-emerald-400 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
         </div>
-        <div className="flex gap-2 mt-4">
-          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Catatan untuk pembimbing..." className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/25 transition-all" />
-          <button onClick={handleSendReport} disabled={uploading} className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"><Send size={14} /> {uploading ? 'Kirim...' : 'Kirim'}</button>
+        <div className="flex justify-between mt-2 text-xs text-blue-200">
+          <span>{reports.length} laporan terkirim</span>
+          <span>Target: {totalWeeks} minggu</span>
         </div>
       </div>
+
+      {/* Week grid */}
+      <div className="bg-white rounded-2xl border border-slate-100 p-5">
+        <h4 className="font-bold text-slate-900 text-sm mb-3" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Progress Mingguan</h4>
+        <div className="grid grid-cols-8 gap-2">
+          {Array.from({ length: totalWeeks }, (_, i) => i + 1).map(w => {
+            const done = uploadedWeeks.includes(w);
+            const isSelected = week === w;
+            return (
+              <button
+                key={w}
+                onClick={() => setWeek(w)}
+                className={cn(
+                  "py-3 rounded-xl text-center text-xs font-bold transition-all",
+                  done ? "bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-pointer hover:bg-emerald-200" :
+                    isSelected ? "bg-blue-600 text-white ring-2 ring-blue-200" :
+                      "bg-slate-50 text-slate-500 border border-slate-200 hover:border-blue-300 hover:bg-blue-50"
+                )}
+                title={done ? `Minggu ${w} - Sudah dikirim (klik untuk lihat)` : `Minggu ${w} - Belum dikirim`}
+              >
+                {done ? <CheckCircle size={16} className="mx-auto" /> : <span>W{w}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Upload form */}
+      <div className="bg-white rounded-2xl border border-slate-100 p-6">
+        <h4 className="font-bold text-slate-900 text-sm mb-4" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+          Upload Laporan Minggu {week}
+        </h4>
+
+        <div className="space-y-4">
+          {/* File picker */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">File Laporan</label>
+            <div className="flex items-center gap-3">
+              <label className={cn(
+                "flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer transition-all",
+                file ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50 hover:border-blue-300"
+              )}>
+                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", file ? "bg-emerald-100" : "bg-slate-100")}>
+                  {file ? <CheckCircle size={20} className="text-emerald-600" /> : <Upload size={20} className="text-slate-400" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-700 truncate">
+                    {file ? file.name : 'Pilih file laporan...'}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'PDF, DOCX, JPG, PNG maks. 10MB'}
+                  </p>
+                </div>
+                <input type="file" onChange={handleFileChange} className="hidden" accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.zip" />
+              </label>
+              {file && (
+                <button onClick={() => setFile(null)} className="text-slate-400 hover:text-red-500 p-2">
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Note */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wide">Catatan</label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              rows={2}
+              placeholder="Deskripsi singkat laporan minggu ini..."
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400 transition-all resize-none"
+            />
+          </div>
+
+          {/* Submit */}
+          <button
+            onClick={handleUpload}
+            disabled={uploading || !file}
+            className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            {uploading ? (
+              <>Mengupload...</>
+            ) : (
+              <><Send size={14} /> Kirim Laporan Minggu {week}</>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* History */}
+      {reports.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-100 p-5">
+          <h4 className="font-bold text-slate-900 text-sm mb-4" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+            Riwayat Laporan ({reports.length})
+          </h4>
+          <div className="space-y-2">
+            {reports.map((r: any) => (
+              <div key={r.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center">
+                    <FileText size={16} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Minggu {r.week}</p>
+                    <p className="text-xs text-slate-400">
+                      {r.uploadedAt ? new Date(r.uploadedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
+                      {r.note ? ` · ${r.note.substring(0, 60)}` : ''}
+                    </p>
+                  </div>
+                </div>
+                {r.fileName && (
+                  <span className="text-[11px] text-slate-400 font-mono truncate max-w-[120px]">{r.fileName}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -959,6 +1211,7 @@ function MEvaluation() {
   const finalScore = evalData?.finalScore ?? '-';
   const grade = evalData?.grade ?? '-';
   const predikat = evalData?.predikat ?? '-';
+  const feedbacks = evalData?.feedbacks || [];
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -1004,6 +1257,43 @@ function MEvaluation() {
           </div>
         )}
       </div>
+
+      {/* Feedback History */}
+      {feedbacks.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-100 p-6">
+          <h3 className="font-bold text-slate-900 mb-4" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Riwayat Feedback Pembimbing</h3>
+          <div className="space-y-3">
+            {feedbacks.map((f: any) => (
+              <div key={f.id} className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                      <MessageSquare size={14} className="text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-700">
+                        {f.week ? `Minggu ${f.week}` : 'Feedback Umum'}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {f.createdAt ? new Date(f.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 bg-blue-100 px-2 py-1 rounded-lg">
+                    <Star size={12} className="text-blue-600" />
+                    <span className="text-xs font-bold text-blue-700">{f.score}/100</span>
+                  </div>
+                </div>
+                {f.comment && (
+                  <p className="text-xs text-slate-600 leading-relaxed mt-2 pl-10">
+                    {f.comment}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1106,7 +1396,7 @@ function MahasiswaShell({ onLogout, currentUser, submitInternship, uploadReport 
           {page === "dashboard" && <MDashboard setPage={setPage} currentUser={currentUser} />}
           {page === "registration" && <MRegistration setPage={setPage} submitInternship={submitInternship} currentUser={currentUser} />}
           {page === "status" && <MStatus />}
-          {page === "monitoring" && <MMonitoring uploadReport={uploadReport} />}
+          {page === "monitoring" && <MMonitoring currentUser={currentUser} />}
           {page === "evaluation" && <MEvaluation />}
           {page === "certificate" && <MCertificate />}
         </main>
@@ -1129,10 +1419,20 @@ const pNav = [
 function PSidebar({ page, setPage, collapsed, setCollapsed }: { page: PembimbingPage; setPage: (p: PembimbingPage) => void; collapsed: boolean; setCollapsed: (v: boolean) => void }) {
   return (
     <aside className={cn("flex flex-col h-screen bg-slate-900 transition-all duration-300 flex-shrink-0", collapsed ? "w-[60px]" : "w-56")}>
-      <div className="flex items-center gap-2.5 px-3 h-16 border-b border-white/5 flex-shrink-0">
-        <div className="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0"><BookOpen size={16} className="text-white" /></div>
-        {!collapsed && <div className="flex-1 min-w-0"><p className="text-white font-extrabold text-sm leading-none" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Nextern</p><p className="text-slate-400 text-[11px] mt-0.5">Pembimbing</p></div>}
-        <button onClick={() => setCollapsed(!collapsed)} className={cn("text-slate-500 hover:text-white", collapsed && "mx-auto")}><Menu size={15} /></button>
+      <div className="flex items-center justify-center h-16 border-b border-white/5 flex-shrink-0">
+        {!collapsed ? (
+          <div className="flex items-center gap-2.5 px-3 w-full">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0"><BookOpen size={16} className="text-white" /></div>
+            <div className="flex-1 min-w-0"><p className="text-white font-extrabold text-sm leading-none" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Nextern</p><p className="text-slate-400 text-[11px] mt-0.5">Pembimbing</p></div>
+            <button onClick={() => setCollapsed(!collapsed)} className="text-slate-500 hover:text-white transition-colors">
+              <Menu size={15} />
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setCollapsed(!collapsed)} className="text-slate-500 hover:text-white transition-colors">
+            <Menu size={15} />
+          </button>
+        )}
       </div>
       <nav className="flex-1 py-3 px-2 space-y-0.5">
         {!collapsed && <p className="text-slate-600 text-[10px] font-bold px-2 py-1 uppercase tracking-widest">Menu</p>}
@@ -1251,77 +1551,176 @@ function PFeedback({ sendFeedback }: { sendFeedback: (studentId: string, score: 
   const [sending, setSending] = useState(false);
   const [pendingList, setPendingList] = useState<any[]>([]);
 
-  useEffect(() => {
-    const fetchPending = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const headers: any = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const res = await fetch('/api/dashboard/pembimbing/pending-feedback', { headers });
-        if (!res.ok) throw new Error('Failed');
-        const json = await res.json();
-        setPendingList(json.data?.pendingFeedback || []);
-      } catch (e) {
-        setPendingList([]);
-      }
-    };
-    fetchPending();
-  }, []);
-
-  const pending = pendingList.length > 0 ? pendingList : [
-    { id: "2310631170057", studentName: "Yayan Mulyana", week: 7, date: "25 Jun 2026", excerpt: "Laporan minggu ini..." },
-    { id: "22031067", studentName: "Firdaus", week: 4, date: "24 Jun 2026", excerpt: "Progres..." },
-  ];
-
-  const handleSendFeedback = async () => {
-    if (!comment.trim()) { alert('Silakan isi komentar'); return; }
-    setSending(true);
+  const fetchPending = async () => {
     try {
-      const studentId = pending[sel]?.studentId || pending[sel]?.id || '';
-      await sendFeedback(studentId, score, comment);
-      alert('Feedback berhasil dikirim');
-      setScore(88); setComment('');
-    } catch (err: any) {
-      alert(err?.message || 'Gagal');
-    } finally { setSending(false); }
+      const token = localStorage.getItem('token');
+      const headers: any = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch('/api/dashboard/pembimbing/pending-feedback', { headers });
+      if (!res.ok) throw new Error('Failed');
+      const json = await res.json();
+      setPendingList(json.data?.pendingFeedback || []);
+    } catch (e) {
+      setPendingList([]);
+    }
   };
 
+  useEffect(() => { fetchPending(); }, []);
+
+  // Filter: show only items that have reports submitted
+  const pending = pendingList.filter(p => p.hasReport);
+
+  const handleSendFeedback = async () => {
+    const selected = pending[sel];
+    if (!selected) { alert('Pilih laporan terlebih dahulu'); return; }
+    if (!comment.trim()) { alert('Silakan isi komentar'); return; }
+
+    setSending(true);
+    try {
+      const token = localStorage.getItem('token');
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch('/api/dashboard/pembimbing/send-feedback', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          studentId: selected.studentId || selected.id,
+          internshipId: selected.internshipId,
+          week: selected.week,
+          score,
+          comment,
+        }),
+      });
+      if (!res.ok) { const t = await res.text(); throw new Error(t || 'Gagal'); }
+      const json = await res.json();
+      if (json.success) {
+        alert(`Feedback untuk ${selected.studentName} minggu ${selected.week} berhasil dikirim!`);
+        setScore(88);
+        setComment('');
+        fetchPending(); // Refresh list
+      } else {
+        alert(json.message || 'Gagal');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Gagal kirim feedback');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Group by student name
+  const grouped = pending.reduce((acc: any, p: any) => {
+    const key = p.studentName || 'Unknown';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(p);
+    return acc;
+  }, {} as Record<string, any[]>);
+
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        {pending.map((p: any, i: number) => (
-          <button key={i} onClick={() => setSel(i)} className={cn("text-left p-4 rounded-2xl border transition-all", sel === i ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white hover:border-emerald-200")}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-600 bg-slate-100 rounded-full px-2 py-0.5">Minggu {p.week}</span>
-              <span className="text-[11px] text-slate-400">{p.date}</span>
-            </div>
-            <p className="text-sm font-bold text-slate-900">{p.studentName || p.student}</p>
-            <p className="text-xs text-slate-500 mt-1 line-clamp-2">{p.excerpt}</p>
-          </button>
-        ))}
-      </div>
-      <div className="bg-white rounded-2xl border border-slate-100 p-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-slate-900 text-sm" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Beri Feedback</h3>
+    <div className="max-w-3xl mx-auto space-y-4">
+      {/* Student reports list */}
+      {Object.keys(grouped).length === 0 && (
+        <div className="bg-white rounded-2xl border border-slate-100 p-8 text-center">
+          <ClipboardCheck size={40} className="mx-auto text-slate-300 mb-3" />
+          <p className="text-sm font-semibold text-slate-500">Belum ada laporan yang perlu direview</p>
+          <p className="text-xs text-slate-400 mt-1">Laporan akan muncul setelah mahasiswa menguploadnya</p>
         </div>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Nilai (0–100)</label>
-            <div className="flex items-center gap-3">
-              <input type="range" min={0} max={100} value={score} onChange={e => setScore(Number(e.target.value))} className="flex-1 accent-emerald-600" />
-              <span className="text-lg font-extrabold text-slate-900 w-10 text-right">{score}</span>
+      )}
+
+      {Object.entries(grouped).map(([studentName, reports]) => {
+        const reportsList = reports as any[];
+        return (
+          <div key={studentName} className="bg-white rounded-2xl border border-slate-100 p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-white text-sm font-bold">
+                {studentName.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{studentName}</h3>
+                <p className="text-xs text-slate-400">{reportsList.length} laporan</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {reportsList.map((p: any, i: number) => {
+                const isSelected = sel === pending.indexOf(p);
+                return (
+                  <button
+                    key={`${p.week}-${i}`}
+                    onClick={() => setSel(pending.indexOf(p))}
+                    className={cn(
+                      "w-full text-left p-4 rounded-xl border transition-all",
+                      isSelected ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200" :
+                        p.hasFeedback ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white hover:border-emerald-200"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "text-xs font-bold px-2 py-0.5 rounded-full",
+                          p.hasFeedback ? "bg-emerald-100 text-emerald-700" : "bg-amber-50 text-amber-700"
+                        )}>
+                          Minggu {p.week}
+                        </span>
+                        {p.fileName && (
+                          <span className="text-[10px] text-slate-400 font-mono truncate max-w-[100px]">
+                            {p.fileName}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-slate-400">{p.date}</span>
+                    </div>
+                    <p className="text-xs text-slate-600 line-clamp-2">{p.excerpt}</p>
+                    {p.hasFeedback && (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-emerald-600">
+                        <CheckCircle size={12} />
+                        <span>Sudah dinilai: {p.existingScore}/100</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Komentar</label>
-            <textarea rows={4} value={comment} onChange={e => setComment(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-400 transition-all resize-none" />
+        );
+      })}
+
+      {/* Feedback form */}
+      {pending.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-100 p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-slate-900 text-sm" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+              Beri Feedback
+              {pending[sel] && (
+                <span className="text-slate-400 font-normal"> · {pending[sel].studentName} minggu {pending[sel].week}</span>
+              )}
+            </h3>
+            {pending[sel]?.hasFeedback && (
+              <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+                <CheckCircle size={12} /> Revisi
+              </span>
+            )}
           </div>
-          <button onClick={handleSendFeedback} disabled={sending}
-            className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50">
-            <Send size={14} /> {sending ? 'Mengirim...' : 'Kirim Feedback'}
-          </button>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Nilai (0–100)</label>
+              <div className="flex items-center gap-3">
+                <input type="range" min={0} max={100} value={score} onChange={e => setScore(Number(e.target.value))} className="flex-1 accent-emerald-600" />
+                <span className="text-lg font-extrabold text-slate-900 w-10 text-right">{score}</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Komentar</label>
+              <textarea rows={4} value={comment} onChange={e => setComment(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-400 transition-all resize-none" />
+            </div>
+            <button onClick={handleSendFeedback} disabled={sending || !pending[sel]}
+              className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50">
+              <Send size={14} /> {sending ? 'Mengirim...' : `Kirim Feedback ${pending[sel] ? `Minggu ${pending[sel].week}` : ''}`}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -1451,10 +1850,20 @@ const aNav = [
 function ASidebar({ page, setPage, collapsed, setCollapsed }: { page: AdminPage; setPage: (p: AdminPage) => void; collapsed: boolean; setCollapsed: (v: boolean) => void }) {
   return (
     <aside className={cn("flex flex-col h-screen bg-slate-950 transition-all duration-300 flex-shrink-0", collapsed ? "w-[60px]" : "w-56")}>
-      <div className="flex items-center gap-2.5 px-3 h-16 border-b border-white/5 flex-shrink-0">
-        <div className="w-8 h-8 rounded-xl bg-violet-500 flex items-center justify-center flex-shrink-0"><Shield size={16} className="text-white" /></div>
-        {!collapsed && <div className="flex-1 min-w-0"><p className="text-white font-extrabold text-sm leading-none" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Nextern</p><p className="text-slate-400 text-[11px] mt-0.5">Admin</p></div>}
-        <button onClick={() => setCollapsed(!collapsed)} className={cn("text-slate-500 hover:text-white", collapsed && "mx-auto")}><Menu size={15} /></button>
+      <div className="flex items-center justify-center h-16 border-b border-white/5 flex-shrink-0">
+        {!collapsed ? (
+          <div className="flex items-center gap-2.5 px-3 w-full">
+            <div className="w-8 h-8 rounded-xl bg-violet-500 flex items-center justify-center flex-shrink-0"><Shield size={16} className="text-white" /></div>
+            <div className="flex-1 min-w-0"><p className="text-white font-extrabold text-sm leading-none" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Nextern</p><p className="text-slate-400 text-[11px] mt-0.5">Admin</p></div>
+            <button onClick={() => setCollapsed(!collapsed)} className="text-slate-500 hover:text-white transition-colors">
+              <Menu size={15} />
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setCollapsed(!collapsed)} className="text-slate-500 hover:text-white transition-colors">
+            <Menu size={15} />
+          </button>
+        )}
       </div>
       <nav className="flex-1 py-3 px-2 space-y-0.5">
         {!collapsed && <p className="text-slate-600 text-[10px] font-bold px-2 py-1 uppercase tracking-widest">Admin Menu</p>}
