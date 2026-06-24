@@ -20,3 +20,17 @@ def calculate_eligibility(gpa, semester, certificate_count, organization_exp):
         "score": score,
         "eligible": eligible
     }
+
+
+# 1. Tarik data dari payload event yang dikirim Frontend
+input_gpa = float(ctx.payload.gpa)
+input_semester = int(ctx.payload.semester)
+input_cert = int(ctx.payload.certificate_count)
+input_org = int(ctx.payload.organization_exp)
+
+# 2. Eksekusi fungsi yang udah lu bikin
+result = calculate_eligibility(input_gpa, input_semester, input_cert, input_org)
+
+# 3. Set hasil ke output VFlow biar step selanjutnya (atau VRule) bisa baca
+ctx.output.score = result["score"]
+ctx.output.is_eligible = result["eligible"]

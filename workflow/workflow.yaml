@@ -1,139 +1,159 @@
-system:
-  name: Smart Internship Management System
+version: "3.0"
+metadata:
+  id: smart-internship-system
+  name: "Smart Internship Management System"
+  description: |
+    Pipeline ujung-ke-ujung untuk manajemen magang Kelompok 1.
+    Meliputi pendaftaran, seleksi eligibilitas, approval spv,
+    matching perusahaan, monitoring mingguan, evaluasi, hingga sertifikasi.
 
-event_flow:
-  start: InternshipSubmitted
+spec:
+  activities:
+    # ==========================================
+    # PINTU MASUK UTAMA (TRIGGER FROM FRONTEND)
+    # ==========================================
+    # ==========================================
+    # PINTU MASUK UTAMA (TRIGGER FROM FRONTEND)
+    # ==========================================
+    - id: status_trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook # ✅ GANTI DARI http JADI webhook
+        webhook_config: # ✅ GANTI DARI http: JADI webhook_config:
+          path: "/api/internship/submit"
+          method: "POST"
+      output_variable: trigger_payload
 
-workflows:
+    # ==========================================
+    # WORKFLOW 1: REGISTRATION AUDIT LOG
+    # ==========================================
+    - id: reg_log
+      activity_type: Detach
+      detach_config:
+        url: "https://expand-dimensional-role-sum.trycloudflare.com/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Registration"
+          status: "Success"
 
-  # =========================
-  # 1. REGISTRATION
-  # =========================
-  - id: wf_registration
-    name: Internship Registration
-    trigger: InternshipSubmitted
+    # ==========================================
+    # WORKFLOW 2: ELIGIBILITY ASSESSMENT
+    # ==========================================
+    - id: eligibility_star
+      activity_type: Starlark
+      starlark_config:
+        file: "workflow/starlark/eligibility.star"
+      output_variable: eligibility_res
 
-    steps:
-      - validate_input
-      - generate_internship_id
-      - save_to_database
-      - audit_log (detach)
+    - id: eligibility_log
+      activity_type: Detach
+      detach_config:
+        url: "https://expand-dimensional-role-sum.trycloudflare.com/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Eligibility Assessment"
+          score: "{{ eligibility_res.score }}"
 
-    output:
-      status: REGISTERED
-      next: EligibilityRequested
+    # ==========================================
+    # WORKFLOW 3: SUPERVISOR APPROVAL
+    # ==========================================
+    - id: approval_log
+      activity_type: Detach
+      detach_config:
+        url: "https://expand-dimensional-role-sum.trycloudflare.com/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Supervisor Approval"
+          action: "Approval Requested"
 
+    # ==========================================
+    # WORKFLOW 4: COMPANY PLACEMENT ENGINE
+    # ==========================================
+    - id: matching_star
+      activity_type: Starlark
+      starlark_config:
+        file: "workflow/starlark/company_matching.star"
+      output_variable: matching_res
 
-  # =========================
-  # 2. ELIGIBILITY CHECK
-  # =========================
-  - id: wf_eligibility
-    name: Eligibility Assessment
-    trigger: EligibilityRequested
+    - id: placement_log
+      activity_type: Detach
+      detach_config:
+        url: "https://expand-dimensional-role-sum.trycloudflare.com/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Company Placement"
+          is_match: "{{ matching_res.is_match }}"
+          match_score: "{{ matching_res.match_score }}"
 
-    steps:
-      - fetch_student_data
-      - run_starlark_eligibility_score
-      - apply_vrule_eligibility_check
-      - save_result
-      - audit_log (detach)
+    # ==========================================
+    # WORKFLOW 5: WEEKLY MONITORING
+    # ==========================================
+    - id: monitoring_log
+      activity_type: Detach
+      detach_config:
+        url: "https://expand-dimensional-role-sum.trycloudflare.com/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Weekly Monitoring"
+          status: "Report Validated"
 
-    output:
-      status: ELIGIBILITY_DONE
-      next: EligibilityCompleted
+    # ==========================================
+    # WORKFLOW 6: PERFORMANCE EVALUATION
+    # ==========================================
+    - id: grading_star
+      activity_type: Starlark
+      starlark_config:
+        file: "workflow/starlark/performance_grading.star"
+      output_variable: grading_res
 
+    - id: evaluation_log
+      activity_type: Detach
+      detach_config:
+        url: "https://expand-dimensional-role-sum.trycloudflare.com/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Performance Evaluation"
+          final_score: "{{ grading_res.final_score }}"
+          grade: "{{ grading_res.grade }}"
 
-  # =========================
-  # 3. SUPERVISOR APPROVAL
-  # =========================
-  - id: wf_approval
-    name: Supervisor Approval
-    trigger: EligibilityCompleted
+    # ==========================================
+    # WORKFLOW 7: CERTIFICATION & COMPLETION
+    # ==========================================
+    - id: certification_log
+      activity_type: Detach
+      detach_config:
+        url: "https://expand-dimensional-role-sum.trycloudflare.com/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Certification"
+          status: "Certificate Generated"
 
-    steps:
-      - send_approval_request
-      - wait_supervisor_response
-      - apply_vrule_approval_requirement
-      - save_decision
-      - audit_log (detach)
+    # ==========================================
+    # PINTU KELUAR AKHIR (END NODE)
+    # ==========================================
+    - id: end
+      activity_type: End
 
-    output:
-      status: APPROVED_OR_REJECTED
-      next: SupervisorDecision
-
-
-  # =========================
-  # 4. COMPANY PLACEMENT
-  # =========================
-  - id: wf_placement
-    name: Company Placement Engine
-    trigger: SupervisorDecision
-
-    steps:
-      - fetch_company_list
-      - run_starlark_matching
-      - apply_vrule_company_matching
-      - assign_company
-      - publish_event
-
-    output:
-      status: COMPANY_ASSIGNED
-      next: CompanyAssigned
-
-
-  # =========================
-  # 5. WEEKLY MONITORING
-  # =========================
-  - id: wf_monitoring
-    name: Weekly Progress Monitoring
-    trigger: ProgressSubmitted
-
-    steps:
-      - validate_report
-      - apply_vrule_progress_compliance
-      - save_progress
-      - audit_log (detach)
-      - publish_event
-
-    output:
-      status: PROGRESS_VALIDATED
-      next: ProgressUpdated
-
-
-  # =========================
-  # 6. PERFORMANCE EVALUATION
-  # =========================
-  - id: wf_evaluation
-    name: Performance Evaluation
-    trigger: EvaluationRequested
-
-    steps:
-      - collect_all_data
-      - run_starlark_grading
-      - apply_vrule_performance_grading
-      - save_result
-      - publish_event
-
-    output:
-      status: EVALUATED
-      next: EvaluationCompleted
-
-
-  # =========================
-  # 7. CERTIFICATION
-  # =========================
-  - id: wf_certification
-    name: Certification & Completion
-    trigger: EvaluationCompleted
-
-    steps:
-      - verify_final_score
-      - apply_vrule_certificate_release
-      - generate_certificate
-      - save_certificate
-      - audit_log (detach)
-      - publish_event
-
-    output:
-      status: COMPLETED
-      next: InternshipCompleted
+  # ==========================================
+  # ALUR HUBUNGAN PANAH (DAG FLOW MAPPING)
+  # ==========================================
+  flows:
+    - { id: f1, from: { node: status_trigger }, to: { node: reg_log } }
+    - { id: f2, from: { node: reg_log }, to: { node: eligibility_star } }
+    - {
+        id: f3,
+        from: { node: eligibility_star },
+        to: { node: eligibility_log },
+      }
+    - { id: f4, from: { node: eligibility_log }, to: { node: approval_log } }
+    - { id: f5, from: { node: approval_log }, to: { node: matching_star } }
+    - { id: f6, from: { node: matching_star }, to: { node: placement_log } }
+    - { id: f7, from: { node: placement_log }, to: { node: monitoring_log } }
+    - { id: f8, from: { node: monitoring_log }, to: { node: grading_star } }
+    - { id: f9, from: { node: grading_star }, to: { node: evaluation_log } }
+    - {
+        id: f10,
+        from: { node: evaluation_log },
+        to: { node: certification_log },
+      }
+    - { id: f11, from: { node: certification_log }, to: { node: end } }

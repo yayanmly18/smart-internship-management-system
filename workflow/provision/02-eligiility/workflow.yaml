@@ -1,0 +1,47 @@
+version: "3.0"
+metadata:
+  id: smart-internship-02-eligibility
+  name: "Workflow 2 - Eligibility Assessment"
+  description: "Menghitung skor kelayakan peserta magang menggunakan Starlark Activity."
+
+spec:
+  activities:
+    - id: eligibility_trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        webhook_config:
+          path: "/api/internship/eligibility"
+          method: "POST"
+      output_variable: eligibility_payload
+
+    - id: eligibility_star
+      activity_type: Starlark
+      starlark_config:
+        file: "workflow/starlark/eligibility.star" # Sesuaikan path ini dengan mekanisme bundle VFlow mentor
+      output_variable: eligibility_res
+
+    - id: eligibility_log
+      activity_type: Detach
+      detach_config:
+        url: "http://127.0.0.1:8080/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Eligibility Assessment"
+          score: "{{ eligibility_res.score }}"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - {
+        id: f1,
+        from: { node: eligibility_trigger },
+        to: { node: eligibility_star },
+      }
+    - {
+        id: f2,
+        from: { node: eligibility_star },
+        to: { node: eligibility_log },
+      }
+    - { id: f3, from: { node: eligibility_log }, to: { node: end } }

@@ -19,3 +19,16 @@ def calculate_final_score(attendance, weekly_report, supervisor_score, company_s
         "final_score": final_score,
         "grade": grade
     }
+
+# 1. Tarik data dari payload event
+input_att = float(ctx.payload.attendance)
+input_weekly = float(ctx.payload.weekly_report)
+input_spv = float(ctx.payload.supervisor_score)
+input_comp = float(ctx.payload.company_score)
+
+# 2. Eksekusi fungsi lu
+result = calculate_final_score(input_att, input_weekly, input_spv, input_comp)
+
+# 3. Set output buat workflow selanjutnya
+ctx.output.final_score = result["final_score"]
+ctx.output.grade = result["grade"]

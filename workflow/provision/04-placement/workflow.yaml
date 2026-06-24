@@ -1,0 +1,40 @@
+version: "3.0"
+metadata:
+  id: smart-internship-04-placement
+  name: "Workflow 4 - Company Placement Engine"
+  description: "Menentukan peringkat dan penempatan perusahaan mahasiswa via Starlark."
+
+spec:
+  activities:
+    - id: placement_trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        webhook_config:
+          path: "/api/internship/placement"
+          method: "POST"
+      output_variable: placement_payload
+
+    - id: matching_star
+      activity_type: Starlark
+      starlark_config:
+        file: "workflow/starlark/company_matching.star"
+      output_variable: matching_res
+
+    - id: placement_log
+      activity_type: Detach
+      detach_config:
+        url: "http://127.0.0.1:8080/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Company Placement"
+          is_match: "{{ matching_res.is_match }}"
+          match_score: "{{ matching_res.match_score }}"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - { id: f1, from: { node: placement_trigger }, to: { node: matching_star } }
+    - { id: f2, from: { node: matching_star }, to: { node: placement_log } }
+    - { id: f3, from: { node: placement_log }, to: { node: end } }

@@ -1,0 +1,32 @@
+version: "3.0"
+metadata:
+  id: smart-internship-03-approval
+  name: "Workflow 3 - Supervisor Approval"
+  description: "Melakukan persetujuan pembimbing dan mencatat audit trail."
+
+spec:
+  activities:
+    - id: approval_trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        webhook_config:
+          path: "/api/internship/approval"
+          method: "POST"
+      output_variable: approval_payload
+
+    - id: approval_log
+      activity_type: Detach
+      detach_config:
+        url: "http://127.0.0.1:8080/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Supervisor Approval"
+          action: "Approval Requested"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - { id: f1, from: { node: approval_trigger }, to: { node: approval_log } }
+    - { id: f2, from: { node: approval_log }, to: { node: end } }

@@ -1,0 +1,36 @@
+version: "3.0"
+metadata:
+  id: smart-internship-07-certification
+  name: "Workflow 7 - Certification & Completion"
+  description: "Otomatisasi pembuatan nomor sertifikat dan penyelesaian status magang."
+
+spec:
+  activities:
+    - id: certification_trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        webhook_config:
+          path: "/api/internship/certification"
+          method: "POST"
+      output_variable: certification_payload
+
+    - id: certification_log
+      activity_type: Detach
+      detach_config:
+        url: "http://127.0.0.1:8080/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Certification"
+          status: "Certificate Generated"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - {
+        id: f1,
+        from: { node: certification_trigger },
+        to: { node: certification_log },
+      }
+    - { id: f2, from: { node: certification_log }, to: { node: end } }

@@ -1,0 +1,32 @@
+version: "3.0"
+metadata:
+  id: smart-internship-05-progress
+  name: "Workflow 5 - Weekly Progress Monitoring"
+  description: "Validasi laporan mingguan magang mahasiswa dan monitoring SLA."
+
+spec:
+  activities:
+    - id: progress_trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        webhook_config:
+          path: "/api/internship/progress"
+          method: "POST"
+      output_variable: progress_payload
+
+    - id: monitoring_log
+      activity_type: Detach
+      detach_config:
+        url: "http://127.0.0.1:8080/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Weekly Monitoring"
+          status: "Report Validated"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - { id: f1, from: { node: progress_trigger }, to: { node: monitoring_log } }
+    - { id: f2, from: { node: monitoring_log }, to: { node: end } }

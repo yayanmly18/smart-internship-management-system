@@ -1,0 +1,40 @@
+version: "3.0"
+metadata:
+  id: smart-internship-06-evaluation
+  name: "Workflow 6 - Performance Evaluation"
+  description: "Menghitung pembobotan nilai akhir dan penentuan grade kelulusan magang."
+
+spec:
+  activities:
+    - id: evaluation_trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        webhook_config:
+          path: "/api/internship/evaluation"
+          method: "POST"
+      output_variable: evaluation_payload
+
+    - id: grading_star
+      activity_type: Starlark
+      starlark_config:
+        file: "workflow/starlark/performance_grading.star"
+      output_variable: grading_res
+
+    - id: evaluation_log
+      activity_type: Detach
+      detach_config:
+        url: "http://127.0.0.1:8080/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Performance Evaluation"
+          final_score: "{{ grading_res.final_score }}"
+          grade: "{{ grading_res.grade }}"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - { id: f1, from: { node: evaluation_trigger }, to: { node: grading_star } }
+    - { id: f2, from: { node: grading_star }, to: { node: evaluation_log } }
+    - { id: f3, from: { node: evaluation_log }, to: { node: end } }

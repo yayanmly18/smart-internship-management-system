@@ -1,0 +1,32 @@
+version: "3.0"
+metadata:
+  id: smart-internship-01-registration
+  name: "Workflow 1 - Internship Registration"
+  description: "Menerima pendaftaran magang dari mahasiswa dan mencatatkan log audit."
+
+spec:
+  activities:
+    - id: status_trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        webhook_config:
+          path: "/api/internship/submit"
+          method: "POST"
+      output_variable: trigger_payload
+
+    - id: reg_log
+      activity_type: Detach
+      detach_config:
+        url: "http://127.0.0.1:8080/api/webhook/audit"
+        method: "POST"
+        payload:
+          process: "Registration"
+          status: "Success"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - { id: f1, from: { node: status_trigger }, to: { node: reg_log } }
+    - { id: f2, from: { node: reg_log }, to: { node: end } }
