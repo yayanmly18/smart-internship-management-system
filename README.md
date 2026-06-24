@@ -4,7 +4,10 @@ Workflow-based Internship Management System using VFlow, VRule, Starlark Activit
 Untuk menjalankan Smart Internship Management System di lingkungan lokal, pastikan Anda sudah menginstal Node.js dan npm terlebih dahulu.
 1. Menjalankan Frontend
 
+
 cd frontend
+
+
 npm install
 npm run dev
 
