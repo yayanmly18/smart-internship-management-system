@@ -1413,7 +1413,6 @@ const pNav = [
   { id: "p-dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "p-students", label: "Mahasiswa Saya", icon: Users },
   { id: "p-feedback", label: "Beri Feedback", icon: MessageSquare },
-  { id: "p-schedule", label: "Jadwal Evaluasi", icon: Calendar },
 ];
 
 function PSidebar({ page, setPage, collapsed, setCollapsed }: { page: PembimbingPage; setPage: (p: PembimbingPage) => void; collapsed: boolean; setCollapsed: (v: boolean) => void }) {
