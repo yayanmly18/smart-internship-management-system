@@ -28,4 +28,4 @@ Password: adminpass
 
 ⚠️ Disarankan untuk mengubah kredensial ini pada lingkungan produksi demi keamanan sistem.
 
-or you can also open it via this link > http://3.25.237.205/
+Untuk demo bisa di cek via link > http://3.25.237.205/
