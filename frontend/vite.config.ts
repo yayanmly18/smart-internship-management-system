@@ -30,11 +30,15 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  server: {
-    proxy: {
-      "/api": "http://localhost:3001",
-    },
-  },
+server: {
+  proxy: {
+    '/api': {
+      target: 'http://3.25.237.205:3000',
+      changeOrigin: true,
+      secure: false,
+    }
+  }
+},
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],

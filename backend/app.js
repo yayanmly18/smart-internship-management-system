@@ -1,3 +1,17 @@
+// 🪤 JEBAKAN BATMAN START 🪤
+const originalExit = process.exit;
+process.exit = function (code) {
+  console.error(
+    `\n🚨 TERTANGKAP BASAH! Ada yang manggil process.exit(${code})!`,
+  );
+  console.error("Ini jejak pelakunya:");
+  console.trace(); // Ini bakal ngelacak dari file mana perintah ini dipanggil
+  originalExit(code);
+};
+// 🪤 JEBAKAN BATMAN END 🪤
+
+// ...
+
 require("dotenv").config();
 
 const express = require("express");
@@ -6,10 +20,12 @@ const cors = require("cors");
 const app = express();
 
 // ─── MIDDLEWARE ─────────────────────
-app.use(cors({
+app.use(
+  cors({
     origin: "http://localhost:5173",
-    credentials: true
-}));
+    credentials: true,
+  }),
+);
 
 app.use(express.json());
 
@@ -25,7 +41,6 @@ const perusahaanRoutes = require("./api/perusahaan.controller");
 const dashboardRoutes = require("./api/dashboard.controller");
 const reportRoutes = require("./api/report.controller");
 
-
 app.use("/api/auth", authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/internship", internshipRoutes);
@@ -39,14 +54,14 @@ app.use("/api/reports", reportRoutes);
 
 // health check
 app.get("/health", (req, res) => {
-    res.json({
-        status: "OK",
-        service: "Smart Internship Backend"
-    });
+  res.json({
+    status: "OK",
+    service: "Smart Internship Backend",
+  });
 });
 
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-    console.log(`Backend running on port ${PORT}`);
+  console.log(`Backend running on port ${PORT}`);
 });
