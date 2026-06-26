@@ -1,0 +1,49 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-register-test
+  name: "Kelompok 1 - Internship Register Test"
+  dialect: vflow
+  tags: [kelompok1, internship, test]
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: fastpath
+        webhook_config:
+          path: /webhook/kelompok1/internship/register-test
+          method: POST
+        response_framing: length_prefixed
+        end_activity: respond
+      output_variable: trigger_payload
+
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: '{"status":"received","source":"vflow","name":trigger_payload.name,"nim":trigger_payload.nim,"email":trigger_payload.email}'
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - { id: f01, from: { node: trigger }, to: { node: shape_response } }
+    - { id: f02, from: { node: shape_response }, to: { node: respond } }
+    - { id: f03, from: { node: respond }, to: { node: end } }
+
+  variables:
+    - { name: trigger_payload, type: object }
+    - { name: final_response, type: object }
