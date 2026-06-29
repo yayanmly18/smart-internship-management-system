@@ -22,7 +22,7 @@ psql -U postgres -c "CREATE DATABASE kelompok1_internship;"
 
 # Setup environment
 cp backend/.env.example backend/.env
-# Edit backend/.env dengan kredensial PostgreSQL Anda
+# Edit backend/.env dengan kredensial PostgreSQL 
 
 # Run migration
 cd backend && node scripts/migrate-to-postgresql.js
@@ -44,20 +44,6 @@ cd frontend && npm run dev
 - **Frontend**: http://localhost:5173
 - **Backend API**: http://localhost:3000
 - **Default Login**: admin@example.com / adminpass
-
----
-
-## Documentation
-
-### Main Documentation
-- **[docs/VFLOW_GUIDE.md](docs/VFLOW_GUIDE.md)** - Panduan lengkap VFlow integration (START HERE!)
-- **[workflow/SETUP.md](workflow/SETUP.md)** - Setup detail VFlow
-- **[workflow/COMPLETE_FLOW.md](workflow/COMPLETE_FLOW.md)** - Workflow bisnis lengkap
-
-### Quick Reference
-- **Quick Start**: Lihat bagian atas halaman ini
-- **Troubleshooting**: Lihat section di `docs/VFLOW_GUIDE.md`
-- **API Testing**: Gunakan curl commands di `docs/VFLOW_GUIDE.md`
 
 ---
 
