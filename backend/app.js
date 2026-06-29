@@ -3,6 +3,8 @@ require("dotenv").config({ path: path.join(__dirname, '.env') });
 
 const express = require("express");
 const cors = require("cors");
+const db = require("./integrations/database.client");
+const vflow = require("./integrations/vflow.client");
 
 const app = express();
 
@@ -39,15 +41,86 @@ app.use("/api/event", eventRoutes);
 app.use("/api/reports", reportRoutes);
 
 // health check
-app.get("/health", (req, res) => {
+app.get("/health", async (req, res) => {
+    let dbStatus = "unknown";
+
+    try {
+        await db.get("SELECT 1 AS ok");
+        dbStatus = "postgres:connected";
+    } catch (error) {
+        dbStatus = `postgres:error:${error.message}`;
+    }
+
     res.json({
         status: "OK",
-        service: "Smart Internship Backend"
+        service: "Smart Internship Backend",
+        database: dbStatus,
+        vflow: {
+            enabled: vflow.config.enabled,
+            mode: vflow.config.mode,
+            baseUrl: vflow.config.baseUrl,
+            namespace: vflow.config.namespace,
+            registrationPath: vflow.config.paths.registration,
+        }
     });
+});
+
+app.get("/api/vflow/health", async (req, res) => {
+    try {
+        const data = await vflow.health();
+        res.json({ success: true, data });
+    } catch (error) {
+        res.status(502).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+app.get("/api/vflow/routes", async (req, res) => {
+    try {
+        const routes = await vflow.listKelompokRoutes();
+
+        res.json({
+            success: true,
+            namespace: vflow.config.namespace,
+            data: routes
+        });
+    } catch (error) {
+        res.status(502).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+app.post("/api/vflow/register-test", async (req, res) => {
+    try {
+        const result = await vflow.triggerRegisterTest(req.body || {});
+        res.json({ success: true, data: result });
+    } catch (error) {
+        res.status(502).json({
+            success: false,
+            message: error.message,
+            detail: error.responseData || null
+        });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-    console.log(`Backend running on port ${PORT}`);
-});
+async function start() {
+    try {
+        await db.initSchema();
+
+        app.listen(PORT, () => {
+            console.log(`Backend running on port ${PORT}`);
+            console.log(`VFlow mode: ${vflow.config.mode} (${vflow.config.baseUrl})`);
+        });
+    } catch (error) {
+        console.error("Failed to start backend:", error.message);
+        process.exit(1);
+    }
+}
+
+start();
