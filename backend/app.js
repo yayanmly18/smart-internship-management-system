@@ -1,4 +1,5 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, '.env') });
 
 const express = require("express");
 const cors = require("cors");
@@ -7,7 +8,7 @@ const app = express();
 
 // ─── MIDDLEWARE ─────────────────────
 app.use(cors({
-    origin: "http://localhost:5173",
+    origin: ["http://localhost:5173", "http://localhost:5174"],
     credentials: true
 }));
 
@@ -45,7 +46,7 @@ app.get("/health", (req, res) => {
     });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log(`Backend running on port ${PORT}`);

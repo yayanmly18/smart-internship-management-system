@@ -143,6 +143,7 @@ router.get('/applicants', authMiddleware, async (req, res) => {
 
         // Data mahasiswa peserta magang: gabungkan users (identitas) + internships (status/progres/perusahaan/pembimbing)
         // ipk/semester belum ada di schema saat ini -> dikirim sebagai '-' untuk kompatibilitas FE.
+        // Use subquery to get only the latest internship per user (by max id)
         const rows = await db.all(
             `SELECT 
                 u.id as userId,
@@ -151,15 +152,17 @@ router.get('/applicants', authMiddleware, async (req, res) => {
                 u.email,
                 u.prodi,
                 u.year,
-                 i.status,
-                 i.progress,
-                 i.company,
-                 i.pembimbing_email,
-                 i.id as internshipId
+                i.status,
+                i.progress,
+                i.company,
+                i.pembimbing_email,
+                i.id as internshipId
              FROM users u
-             LEFT JOIN internships i ON i.user_email = u.email
+             LEFT JOIN internships i ON i.id = (
+               SELECT MAX(i2.id) FROM internships i2 WHERE i2.user_email = u.email
+             )
              WHERE u.role = 'mahasiswa'
-             ORDER BY i.id DESC, u.id DESC`
+             ORDER BY u.id DESC`
         );
 
         const normalizeStatus = (raw) => {
@@ -213,13 +216,8 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
 
         // Real monthly data from internships
         const monthlyRaw = await db.all(
-            `SELECT strftime('%m', created_at) as month_num,
-                    CASE strftime('%m', created_at)
-                        WHEN '01' THEN 'Jan' WHEN '02' THEN 'Feb' WHEN '03' THEN 'Mar'
-                        WHEN '04' THEN 'Apr' WHEN '05' THEN 'Mei' WHEN '06' THEN 'Jun'
-                        WHEN '07' THEN 'Jul' WHEN '08' THEN 'Agt' WHEN '09' THEN 'Sep'
-                        WHEN '10' THEN 'Okt' WHEN '11' THEN 'Nov' WHEN '12' THEN 'Des'
-                    END as bulan,
+            `SELECT EXTRACT(MONTH FROM created_at) as month_num,
+                    TO_CHAR(created_at, 'Mon') as bulan,
                     COUNT(*) as daftar,
                     SUM(CASE WHEN status IN ('selesai','lulus','completed') THEN 1 ELSE 0 END) as lulus
              FROM internships

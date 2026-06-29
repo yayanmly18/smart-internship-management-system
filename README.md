@@ -1,31 +1,211 @@
-# smart-internship-management-system
-Workflow-based Internship Management System using VFlow, VRule, Starlark Activity, and Event-Driven Architecture for registration, approval, monitoring, evaluation, and certification processes.
+# Smart Internship Management System - Kelompok 1
 
-Untuk menjalankan Smart Internship Management System di lingkungan lokal, pastikan Anda sudah menginstal Node.js dan npm terlebih dahulu.
-1. Menjalankan Frontend
+Workflow-based Internship Management System dengan integrasi VFlow untuk proses registrasi, approval, monitoring, evaluasi, dan sertifikasi magang.
 
+---
 
-  cd frontend
+## 🚀 Quick Start
 
-  npm install
+### 1. Install Dependencies
+```bash
+# Backend
+cd backend && npm install
 
-  npm run dev
+# Frontend
+cd ../frontend && npm install
+```
 
-2. Menjalankan Backend
+### 2. Setup Database
+```bash
+# Buat database PostgreSQL
+psql -U postgres -c "CREATE DATABASE kelompok1_internship;"
 
-  cd backend
-  
-  npm install
-  
-  npm run dev
+# Setup environment
+cp backend/.env.example backend/.env
+# Edit backend/.env dengan kredensial PostgreSQL Anda
 
-Sistem menyediakan akun admin default untuk keperluan testing:
+# Run migration
+cd backend && node scripts/migrate-to-postgresql.js
 
-Email: admin@example.com
+# Create admin user
+node scripts/seed-admin-postgres.js
+```
 
-Password: adminpass
+### 3. Run Application
+```bash
+# Terminal 1 - Backend (port 3000)
+cd backend && npm run dev
 
+# Terminal 2 - Frontend (port 5173)
+cd frontend && npm run dev
+```
 
-⚠️ Disarankan untuk mengubah kredensial ini pada lingkungan produksi demi keamanan sistem.
+### 4. Access Application
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:3000
+- **Default Login**: admin@example.com / adminpass
 
-Untuk demo bisa di cek via link > http://3.25.237.205/
+---
+
+## 📚 Documentation
+
+### Main Documentation
+- **[docs/VFLOW_GUIDE.md](docs/VFLOW_GUIDE.md)** - Panduan lengkap VFlow integration (START HERE!)
+- **[workflow/SETUP.md](workflow/SETUP.md)** - Setup detail VFlow
+- **[workflow/COMPLETE_FLOW.md](workflow/COMPLETE_FLOW.md)** - Workflow bisnis lengkap
+
+### Quick Reference
+- **Quick Start**: Lihat bagian atas halaman ini
+- **Troubleshooting**: Lihat section di `docs/VFLOW_GUIDE.md`
+- **API Testing**: Gunakan curl commands di `docs/VFLOW_GUIDE.md`
+
+---
+
+## 🛠️ Tech Stack
+
+### Backend
+- **Framework**: Express.js
+- **Database**: PostgreSQL (primary) / SQLite (fallback)
+- **Authentication**: JWT (jsonwebtoken)
+- **Workflow**: VFlow (via webhook)
+
+### Frontend
+- **Framework**: React + TypeScript
+- **Build Tool**: Vite
+- **UI Components**: Custom components dengan Tailwind CSS
+- **Charts**: Recharts
+
+### VFlow Integration
+- **Workflow Engine**: VFlow (sqavflow.vastar.id)
+- **Business Rules**: VRule
+- **Activities**: Starlark
+- **Database Access**: Via tunnel (db-tunnel.vastar.id:15431)
+
+---
+
+## 📁 Project Structure
+
+```
+├── backend/
+│   ├── api/                    # Controllers (auth, internship, dashboard, etc)
+│   ├── config/                 # Configuration files
+│   ├── integrations/           # Database client (PostgreSQL/SQLite)
+│   ├── middleware/             # Auth & error middleware
+│   ├── scripts/                # Migration & utility scripts
+│   ├── services/               # Business logic services
+│   └── app.js                  # Express server entry point
+│
+├── frontend/
+│   ├── src/app/
+│   │   ├── App.tsx             # Main React component
+│   │   └── components/         # Reusable UI components
+│   └── vite.config.ts          # Vite configuration
+│
+├── workflow/
+│   ├── vflow/                  # VFlow workflow definitions
+│   │   ├── 01-register-test.yaml
+│   │   └── pack.yaml           # Connection pack
+│   ├── vrules/                 # Business rules (VRule)
+│   ├── starlark/               # Starlark scripts
+│   └── scripts/                # Provision & test scripts
+│
+├── docs/
+│   └── VFLOW_GUIDE.md          # Main VFlow documentation
+│
+├── setup-env.sh                # VFlow environment variables
+└── kel1-client.toml            # Rathole tunnel configuration
+```
+
+---
+
+## 🎯 Key Features
+
+1. **Internship Registration** - Multi-step registration with document upload
+2. **Eligibility Assessment** - Automated scoring with Starlark
+3. **Admin Verification** - Document & academic review workflow
+4. **Supervisor Approval** - Approval chain with notifications
+5. **Company Placement** - Automated company matching
+6. **Weekly Monitoring** - Progress tracking & reporting
+7. **Performance Evaluation** - Grading & feedback system
+8. **Certification** - Automatic certificate generation
+
+---
+
+## 🔧 Configuration
+
+### Database
+- **Development**: SQLite (automatic, no setup needed)
+- **Production/VFlow**: PostgreSQL (requires setup)
+
+### Environment Variables
+See `docs/VFLOW_GUIDE.md` for complete environment setup.
+
+---
+
+## 🧪 Testing
+
+### Quick Tests
+```bash
+# Health check
+curl http://localhost:3000/health
+
+# Login test
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"adminpass","role":"admin"}'
+```
+
+### VFlow Tests
+```bash
+# Provision workflow
+bash workflow/scripts/provision-vflow.sh
+
+# Smoke test
+bash workflow/scripts/smoke-vflow.sh
+```
+
+---
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+| Error | Solution |
+|-------|----------|
+| `password authentication failed` | Check PostgreSQL credentials in `backend/.env` |
+| `ECONNREFUSED` | Pastikan backend running di port 3000 |
+| `no workflow for path` | Jalankan `bash workflow/scripts/provision-vflow.sh` |
+| `unauthorized` | Restart dengan `source setup-env.sh` |
+
+### Detailed Troubleshooting
+Lihat section troubleshooting di `docs/VFLOW_GUIDE.md`
+
+---
+
+## 📞 Support
+
+- **VFlow Tokens**: Minta ke pembimbing
+- **Database Access**: Minta ke pembimbing  
+- **Technical Issues**: Buat issue di GitHub
+
+---
+
+## 🔐 Security Notes
+
+- ✅ Semua token & credentials di `.gitignore`
+- ✅ Jangan commit `setup-env.sh` ke GitHub
+- ✅ Ganti default password di production
+- ✅ Gunakan HTTPS di production
+
+---
+
+## 📄 License
+
+[Your License Here]
+
+---
+
+**Kelompok 1** - Smart Internship Management System  
+**Created**: 2026-06-26 | **Version**: 1.0
+
+Dikembangkan untuk magang dengan integrasi VFlow workflow engine.

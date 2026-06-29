@@ -1,14 +1,89 @@
-# frontend dependency
-frontend/node_modules/
-
-# backend dependency 
-backend/node_modules/
-
-# global dependency
+# Dependencies
 node_modules/
+*/node_modules/
 
-# environment file
+# Environment variables (NEVER commit these!)
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# system files
+# VFlow credentials
+vflow-admin.sh
+*.token
+*_token*
+*_key*
+setup-env.sh
+kel1-client.toml
+
+# Database
+*.sqlite
+*.db
+backend/data.sqlite
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Build outputs
+dist/
+build/
+*/dist/
+*/build/
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Rathole config (contains tokens)
+kel1-client.toml
+*.toml
+
+# PostgreSQL (local)
+postgres_data/
+docker-compose.override.yml
+
+# Backup files
+*.bak
+*.backup
+
+# Package lock files (choose one)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml

@@ -273,7 +273,7 @@ router.post("/certify", authMiddleware, async (req, res) => {
     }
 });
 
-// Admin create internship directly (bypass workflow)
+// Admin create/update internship directly (bypass workflow) - UPSERT by user_email
 router.post('/admin/create', authMiddleware, async (req, res) => {
     try {
         if (!req.user || req.user.role !== 'admin') {
@@ -285,17 +285,43 @@ router.post('/admin/create', authMiddleware, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Email diperlukan' });
         }
 
-        const result = await db.run(
-            `INSERT INTO internships (name, nim, user_email, prodi, year, status, company, pembimbing_email) 
-             VALUES (?,?,?,?,?,?,?,?)`,
-            [name || null, nim || null, email, prodi || null, year || null, status || 'pending', company || null, pembimbing_email || null]
+        // Check if an internship already exists for this email
+        const existing = await db.get(
+            'SELECT id FROM internships WHERE user_email = ? ORDER BY created_at DESC LIMIT 1',
+            [email]
         );
 
-        const internship = await db.get('SELECT * FROM internships WHERE id=?', [result.id]);
+        let internship;
+        if (existing) {
+            // UPDATE existing internship
+            await db.run(
+                `UPDATE internships SET 
+                    name = COALESCE(?, name),
+                    nim = COALESCE(?, nim),
+                    prodi = COALESCE(?, prodi),
+                    year = COALESCE(?, year),
+                    status = COALESCE(?, status),
+                    company = COALESCE(?, company),
+                    pembimbing_email = COALESCE(?, pembimbing_email),
+                    updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                [name || null, nim || null, prodi || null, year || null, status || null, company || null, pembimbing_email || null, existing.id]
+            );
+            internship = await db.get('SELECT * FROM internships WHERE id=?', [existing.id]);
+        } else {
+            // INSERT new internship
+            const result = await db.run(
+                `INSERT INTO internships (name, nim, user_email, prodi, year, status, company, pembimbing_email) 
+                 VALUES (?,?,?,?,?,?,?,?)`,
+                [name || null, nim || null, email, prodi || null, year || null, status || 'pending', company || null, pembimbing_email || null]
+            );
+            internship = await db.get('SELECT * FROM internships WHERE id=?', [result.id]);
+        }
+
         res.json({ success: true, data: internship });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ success: false, message: 'Failed to create internship' });
+        res.status(500).json({ success: false, message: 'Failed to create/update internship' });
     }
 });
 

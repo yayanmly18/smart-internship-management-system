@@ -4,6 +4,90 @@ const db = require('../integrations/database.client');
 const authMiddleware = require('../middleware/auth.middleware');
 
 // ================================================================
+// ADMIN DASHBOARD - Overall Statistics
+// ================================================================
+router.get('/admin/stats', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    // Total mahasiswa (role = 'mahasiswa')
+    const mahasiswaResult = await db.get(
+      "SELECT COUNT(*) as count FROM users WHERE role = 'mahasiswa'"
+    );
+    const totalMahasiswa = mahasiswaResult?.count || 0;
+
+    // Total pembimbing (role = 'pembimbing')
+    const pembimbingResult = await db.get(
+      "SELECT COUNT(*) as count FROM users WHERE role = 'pembimbing'"
+    );
+    const totalPembimbing = pembimbingResult?.count || 0;
+
+    // Total admin (role = 'admin')
+    const adminResult = await db.get(
+      "SELECT COUNT(*) as count FROM users WHERE role = 'admin'"
+    );
+    const totalAdmin = adminResult?.count || 0;
+
+    // Total pendaftar (semua yang ada di tabel internships)
+    const pendaftarResult = await db.get(
+      'SELECT COUNT(DISTINCT user_email) as count FROM internships'
+    );
+    const totalPendaftar = pendaftarResult?.count || 0;
+
+    // Total user (semua user)
+    const totalUserResult = await db.get(
+      'SELECT COUNT(*) as count FROM users'
+    );
+    const totalUser = totalUserResult?.count || 0;
+
+    // Tren pendaftaran 6 bulan terakhir
+    const trenResult = await db.all(`
+      SELECT 
+        TO_CHAR(created_at, 'Mon') as month,
+        COUNT(*) as count
+      FROM internships
+      WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '6 months'
+      GROUP BY TO_CHAR(created_at, 'Mon'), EXTRACT(MONTH FROM created_at)
+      ORDER BY EXTRACT(MONTH FROM created_at) ASC
+    `);
+
+    // Distribusi status
+    const statusResult = await db.all(`
+      SELECT 
+        status,
+        COUNT(*) as count
+      FROM internships
+      GROUP BY status
+    `);
+
+    const statusDistribution = statusResult.reduce((acc, curr) => {
+      acc[curr.status] = parseInt(curr.count);
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: {
+        stats: {
+          totalPendaftar,
+          totalMahasiswa,
+          totalUser,
+          totalAdmin,
+          totalPembimbing
+        },
+        trenPendaftaran: trenResult,
+        distribusiStatus: statusDistribution
+      }
+    });
+  } catch (err) {
+    console.error('Admin dashboard error:', err);
+    res.status(500).json({ success: false, message: 'Failed to get admin dashboard' });
+  }
+});
+
+// ================================================================
 // MAHASISWA DASHBOARD - Stats & Progress
 // ================================================================
 router.get('/mahasiswa/dashboard', authMiddleware, async (req, res) => {
@@ -407,6 +491,130 @@ router.get('/mahasiswa/certificate', authMiddleware, async (req, res) => {
 });
 
 // ================================================================
+// PEMBIMBING - Dashboard stats (pending review + average score)
+// ================================================================
+router.get('/pembimbing/stats', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'pembimbing') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const userId = req.user.id;
+    const pembimbing = await db.get(
+      'SELECT email, name FROM users WHERE id = ? AND role = ?',
+      [userId, 'pembimbing']
+    );
+    if (!pembimbing?.email) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    // Get all students under this pembimbing with their reports and feedbacks
+    const students = await db.all(
+      `SELECT i.id as internshipId, i.user_email, i.status, i.progress,
+              us.name as studentName, us.nim as studentNim, us.email as studentEmail
+       FROM internships i
+       LEFT JOIN users us 
+         ON LOWER(us.email) = LOWER(i.user_email)
+       WHERE LOWER(i.pembimbing_email) = LOWER(?)
+       ORDER BY i.created_at DESC`,
+      [pembimbing.email]
+    );
+
+    // Enrich students with report count and average score
+    const enrichedStudents = await Promise.all(
+      students.map(async (s) => {
+        // Count reports for this student
+        const reports = await db.all(
+          'SELECT COUNT(*) as count FROM reports WHERE internship_id = ?',
+          [s.internshipId]
+        );
+        const reportCount = parseInt(reports[0]?.count || 0);
+
+        // Calculate average score from feedbacks
+        // NOTE: feedbacks.student_id di DB tersimpan sebagai NIM (bukan email), jadi
+        // jangan fallback ke email agar hasil tidak ikut “ketutup”.
+        const feedbacks = await db.all(
+          `SELECT score FROM feedbacks
+           WHERE student_id = ? AND internship_id = ?`,
+          [s.studentNim, s.internshipId]
+        );
+
+        const scores = feedbacks.filter(f => f.score).map(f => f.score);
+        const avgScore = scores.length > 0
+          ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+          : null;
+
+
+        return {
+          ...s,
+          reportCount,
+          avgScore,
+          company: s.company || '-'
+        };
+      })
+    );
+
+    const totalStudents = students.length;
+    const activeStudents = students.filter(s => (s.status || '').toLowerCase() === 'aktif').length;
+
+    // Count pending reviews: reports without feedback
+    let pendingReview = 0;
+    let allFeedbacks = [];
+
+    for (const s of students) {
+      // Get reports for this internship
+      const reports = await db.all(
+        'SELECT id, week FROM reports WHERE internship_id = ?',
+        [s.internshipId]
+      );
+
+      // Get feedbacks for this student
+      const feedbacks = await db.all(
+        `SELECT score FROM feedbacks
+         WHERE student_id = ? AND internship_id = ?`,
+        [s.studentNim || String(s.user_email), s.internshipId]
+      );
+
+      // Track scores
+      for (const f of feedbacks) {
+        if (f.score) allFeedbacks.push(f.score);
+      }
+
+      // Count reports without matching feedback
+      const feedbackWeeks = new Set();
+      for (const f of feedbacks) {
+        const match = (f.comment || '').match(/\(Minggu (\d+)\)/);
+        if (match) feedbackWeeks.add(Number(match[1]));
+      }
+
+      for (const r of reports) {
+        if (!feedbackWeeks.has(r.week)) {
+          pendingReview++;
+        }
+      }
+    }
+
+    const averageScore = allFeedbacks.length > 0
+      ? Math.round(allFeedbacks.reduce((sum, s) => sum + s, 0) / allFeedbacks.length)
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        totalStudents,
+        activeStudents,
+        pendingReview,
+        averageScore,
+        students: enrichedStudents,
+      }
+    });
+  } catch (err) {
+    console.error('Pembimbing stats error:', err);
+    res.status(500).json({ success: false, message: 'Failed to get pembimbing stats' });
+  }
+});
+
+// ================================================================
 // PEMBIMBING - Pending feedback & student reports
 // ================================================================
 router.get('/pembimbing/pending-feedback', authMiddleware, async (req, res) => {
@@ -425,8 +633,8 @@ router.get('/pembimbing/pending-feedback', authMiddleware, async (req, res) => {
     }
 
     const students = await db.all(
-      `SELECT i.id as internshipId, i.user_email, i.status, i.progress, i.nim,
-              us.name as studentName, us.nim as studentNim
+      `SELECT i.id as "internshipId", i.user_email, i.status, i.progress, i.nim,
+              us.name as "studentName", us.nim as "studentNim"
        FROM internships i
        LEFT JOIN users us ON us.email = i.user_email
        WHERE i.pembimbing_email = ?

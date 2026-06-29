@@ -1451,11 +1451,15 @@ function PSidebar({ page, setPage, collapsed, setCollapsed }: { page: Pembimbing
   );
 }
 
-function PDashboard({ profile, students }: { profile: any; students: any[] }) {
+function PDashboard({ profile, students, stats: pembimbingStats }: { profile: any; students: any[]; stats: any }) {
   const pembimbingName = profile?.name || 'Pembimbing';
   const pembimbingNip = profile?.nip || '-';
   const totalStudents = students?.length ?? 0;
   const activeStudents = (students || []).filter(s => (s.status || '').toLowerCase() === 'aktif').length;
+
+  const pendingReview = pembimbingStats?.pendingReview ?? 0;
+  const averageScore = pembimbingStats?.averageScore ?? 0;
+  const hasFeedbacks = pendingReview > 0 || averageScore > 0;
 
   return (
     <div className="space-y-5">
@@ -1467,17 +1471,14 @@ function PDashboard({ profile, students }: { profile: any; students: any[] }) {
           <span className="bg-white/15 border border-white/20 rounded-full px-3 py-1 text-xs font-semibold">{activeStudents} Mahasiswa Aktif</span>
         </div>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Total Mahasiswa" value={String(totalStudents)} sub="bimbingan" icon={<Users size={17} />} color="emerald" />
-        <StatCard label="Laporan Masuk" value={String(students.length)} sub="total" icon={<FileText size={17} />} color="blue" />
-        <StatCard label="Perlu Review" value="-" sub="feedback" icon={<AlertCircle size={17} />} color="amber" />
-        <StatCard label="Rata-rata Nilai" value="-" sub="belum ada" icon={<Star size={17} />} color="violet" />
-      </div>
+      {/* Grid statistik disembunyikan sesuai permintaan */}
+      <div className="hidden" />
+
       <div className="bg-white rounded-2xl border border-slate-100 p-5">
         <h3 className="font-bold text-slate-900 text-sm mb-4" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Mahasiswa Bimbingan</h3>
         <div className="space-y-3">
-          {(students || []).map((s: any) => (
-            <div key={s.internshipId} className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all">
+          {(students || []).map((s: any, idx: number) => (
+            <div key={`${s.internshipId}-${s.userEmail}-${idx}`} className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all">
               <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                 {(s.studentName || '').split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
               </div>
@@ -1511,8 +1512,8 @@ function PStudents({ students }: { students: any[] }) {
   return (
     <div className="space-y-4">
       {students.length === 0 && <div className="p-4 rounded-xl border border-slate-100 bg-slate-50 text-center text-sm text-slate-500">Tidak ada mahasiswa bimbingan.</div>}
-      {(students || []).map((s: any) => (
-        <div key={s.internshipId} className="bg-white rounded-2xl border border-slate-100 p-6">
+      {(students || []).map((s: any, idx: number) => (
+        <div key={`${s.internshipId}-${s.studentNim || idx}`} className="bg-white rounded-2xl border border-slate-100 p-6">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-start gap-3">
               <div className="w-12 h-12 rounded-2xl bg-blue-500 flex items-center justify-center text-white font-bold flex-shrink-0">
@@ -1527,7 +1528,11 @@ function PStudents({ students }: { students: any[] }) {
             <Badge status={s.status || 'pending'} />
           </div>
           <div className="grid grid-cols-3 gap-3 mb-4">
-            {[{ l: "Progres", v: `${s.progress ?? 0}%` }, { l: "Laporan", v: '-' }, { l: "Nilai", v: '-' }].map((stat: any) => (
+            {[
+              { l: "Progres", v: `${s.progress ?? 0}%` },
+              { l: "Laporan", v: s.reportCount !== undefined ? String(s.reportCount) : '-' },
+              { l: "Nilai", v: s.avgScore !== undefined && s.avgScore !== null ? String(s.avgScore) : '-' }
+            ].map((stat: any) => (
               <div key={stat.l} className="p-3 rounded-xl bg-slate-50 text-center">
                 <p className="text-lg font-extrabold text-slate-900">{stat.v}</p>
                 <p className="text-[11px] text-slate-400">{stat.l}</p>
@@ -1646,7 +1651,7 @@ function PFeedback({ sendFeedback }: { sendFeedback: (studentId: string, score: 
                 const isSelected = sel === pending.indexOf(p);
                 return (
                   <button
-                    key={`${p.week}-${i}`}
+                    key={p.internshipId + '-' + p.week + '-' + i}
                     onClick={() => setSel(pending.indexOf(p))}
                     className={cn(
                       "w-full text-left p-4 rounded-xl border transition-all",
@@ -1779,6 +1784,7 @@ function PembimbingShell({ onLogout, currentUser, sendFeedback }: { onLogout: ()
   const [collapsed, setCollapsed] = useState(false);
   const [profile, setProfile] = useState<any | null>(null);
   const [students, setStudents] = useState<any[]>([]);
+  const [pembimbingStats, setPembimbingStats] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const fetchPembimbingProfile = async () => {
@@ -1796,16 +1802,39 @@ function PembimbingShell({ onLogout, currentUser, sendFeedback }: { onLogout: ()
     const headers: any = {};
     if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch('/api/internship/pembimbing/students', { headers });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('Pembimbing students API error:', res.status, errText);
+      throw new Error(errText);
+    }
     const json = await res.json();
     setStudents(json.data?.students || []);
+  };
+
+  const fetchPembimbingStats = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const headers: any = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch('/api/dashboard/pembimbing/stats', { headers });
+      if (!res.ok) throw new Error('Failed');
+      const json = await res.json();
+      if (json.success) setPembimbingStats(json.data);
+    } catch (e) {
+      console.error('Failed to fetch pembimbing stats', e);
+      setPembimbingStats(null);
+    }
   };
 
   useEffect(() => {
     const run = async () => {
       setLoading(true);
-      try { await fetchPembimbingProfile(); await fetchPembimbingStudents(); }
-      catch (e) { setProfile(null); setStudents([]); }
+      try {
+        await fetchPembimbingProfile();
+        await fetchPembimbingStudents();
+        await fetchPembimbingStats();
+      }
+      catch (e) { setProfile(null); setStudents([]); setPembimbingStats(null); }
       finally { setLoading(false); }
     };
     run();
@@ -1824,7 +1853,7 @@ function PembimbingShell({ onLogout, currentUser, sendFeedback }: { onLogout: ()
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
         <Topbar title={meta[page].title} subtitle={meta[page].subtitle} onLogout={onLogout} role="pembimbing" />
         <main className="flex-1 overflow-y-auto p-5">
-          {page === "p-dashboard" && <PDashboard profile={profile} students={students} />}
+          {page === "p-dashboard" && <PDashboard profile={profile} students={students} stats={pembimbingStats} />}
           {page === "p-students" && (loading ? <div className="text-slate-500 text-sm">Loading...</div> : <PStudents students={students} />)}
           {page === "p-feedback" && <PFeedback sendFeedback={sendFeedback} />}
           {page === "p-schedule" && <PSchedule />}
@@ -1891,7 +1920,7 @@ function ADashboard() {
         const token = localStorage.getItem('token');
         const headers: any = {};
         if (token) headers.Authorization = `Bearer ${token}`;
-        const res = await fetch('/api/auth/dashboard', { headers });
+        const res = await fetch('/api/dashboard/admin/stats', { headers });
         if (!res.ok) throw new Error(await res.text());
         const json = await res.json();
         setData(json.data);
@@ -1900,9 +1929,24 @@ function ADashboard() {
     fetchDash();
   }, []);
 
-  const monthly = data?.monthly ?? adminMonthlyData;
-  const status = data?.status ?? statusPieData;
-  const totalPendaftar = data?.totalApplicants ?? 0;
+  // Transform backend data format to frontend format
+  const monthly = data?.trenPendaftaran?.length ? data.trenPendaftaran.map((item: any) => ({
+    bulan: item.month,
+    daftar: parseInt(item.count) || 0,
+    lulus: 0
+  })) : adminMonthlyData;
+
+  const status = data?.distribusiStatus ? [
+    { name: 'Aktif', value: data.distribusiStatus.aktif || 0, color: '#2563EB' },
+    { name: 'Selesai', value: data.distribusiStatus.selesai || 0, color: '#10B981' },
+    { name: 'Seleksi', value: data.distribusiStatus.seleksi || 0, color: '#F59E0B' },
+    { name: 'Ditolak', value: data.distribusiStatus.ditolak || 0, color: '#EF4444' },
+  ] : statusPieData;
+
+  const totalPendaftar = parseInt(data?.stats?.totalPendaftar) || 0;
+  const totalUsers = parseInt(data?.stats?.totalUser) || 0;
+  const totalAdmin = parseInt(data?.stats?.totalAdmin) || 0;
+  const totalPembimbing = parseInt(data?.stats?.totalPembimbing) || 0;
 
   return (
     <div className="space-y-5">
@@ -1912,9 +1956,9 @@ function ADashboard() {
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Total Pendaftar" value={String(totalPendaftar)} sub="Mahasiswa" icon={<Users size={17} />} color="blue" />
-        <StatCard label="Total User" value={String(data?.totalUsers ?? 0)} sub="Semua akun" icon={<Briefcase size={17} />} color="emerald" />
-        <StatCard label="Admin" value={String(data?.admins ?? 0)} sub="Administrator" icon={<Shield size={17} />} color="violet" />
-        <StatCard label="Pembimbing" value={String(data?.pembimbings ?? 0)} sub="Dosen" icon={<BookOpen size={17} />} color="amber" />
+        <StatCard label="Total User" value={String(totalUsers)} sub="Semua akun" icon={<Briefcase size={17} />} color="emerald" />
+        <StatCard label="Admin" value={String(totalAdmin)} sub="Administrator" icon={<Shield size={17} />} color="violet" />
+        <StatCard label="Pembimbing" value={String(totalPembimbing)} sub="Dosen" icon={<BookOpen size={17} />} color="amber" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 p-5">
