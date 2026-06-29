@@ -4,7 +4,7 @@ Workflow-based Internship Management System dengan integrasi VFlow untuk proses 
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Install Dependencies
 ```bash
@@ -47,7 +47,7 @@ cd frontend && npm run dev
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 ### Main Documentation
 - **[docs/VFLOW_GUIDE.md](docs/VFLOW_GUIDE.md)** - Panduan lengkap VFlow integration (START HERE!)
@@ -61,7 +61,7 @@ cd frontend && npm run dev
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 ### Backend
 - **Framework**: Express.js
@@ -83,7 +83,7 @@ cd frontend && npm run dev
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ├── backend/
@@ -118,7 +118,7 @@ cd frontend && npm run dev
 
 ---
 
-## 🎯 Key Features
+## Key Features
 
 1. **Internship Registration** - Multi-step registration with document upload
 2. **Eligibility Assessment** - Automated scoring with Starlark
@@ -131,7 +131,7 @@ cd frontend && npm run dev
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 ### Database
 - **Development**: SQLite (automatic, no setup needed)
@@ -163,47 +163,6 @@ bash workflow/scripts/provision-vflow.sh
 # Smoke test
 bash workflow/scripts/smoke-vflow.sh
 ```
-
----
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-| Error | Solution |
-|-------|----------|
-| `password authentication failed` | Check PostgreSQL credentials in `backend/.env` |
-| `ECONNREFUSED` | Pastikan backend running di port 3000 |
-| `no workflow for path` | Jalankan `bash workflow/scripts/provision-vflow.sh` |
-| `unauthorized` | Restart dengan `source setup-env.sh` |
-
-### Detailed Troubleshooting
-Lihat section troubleshooting di `docs/VFLOW_GUIDE.md`
-
----
-
-## 📞 Support
-
-- **VFlow Tokens**: Minta ke pembimbing
-- **Database Access**: Minta ke pembimbing  
-- **Technical Issues**: Buat issue di GitHub
-
----
-
-## 🔐 Security Notes
-
-- ✅ Semua token & credentials di `.gitignore`
-- ✅ Jangan commit `setup-env.sh` ke GitHub
-- ✅ Ganti default password di production
-- ✅ Gunakan HTTPS di production
-
----
-
-## 📄 License
-
-[Your License Here]
-
----
 
 **Kelompok 1** - Smart Internship Management System  
 **Created**: 2026-06-26 | **Version**: 1.0
