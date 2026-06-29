@@ -65,7 +65,7 @@ cd frontend && npm run dev
 
 ### Backend
 - **Framework**: Express.js
-- **Database**: PostgreSQL (primary) / SQLite (fallback)
+- **Database**: PostgreSQL 
 - **Authentication**: JWT (jsonwebtoken)
 - **Workflow**: VFlow (via webhook)
 
@@ -134,7 +134,6 @@ cd frontend && npm run dev
 ## Configuration
 
 ### Database
-- **Development**: SQLite (automatic, no setup needed)
 - **Production/VFlow**: PostgreSQL (requires setup)
 
 ### Environment Variables
@@ -142,7 +141,7 @@ See `docs/VFLOW_GUIDE.md` for complete environment setup.
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ### Quick Tests
 ```bash
