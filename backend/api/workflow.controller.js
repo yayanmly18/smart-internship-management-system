@@ -4,6 +4,7 @@ const workflow = require("../services/workflow.service");
 const vrule = require("../services/vrule.service");
 const db = require("../integrations/database.client");
 const authMiddleware = require("../middleware/auth.middleware");
+const vflow = require("../integrations/vflow.client");
 
 // ================================================================
 // WORKFLOW API ENDPOINTS
@@ -24,11 +25,40 @@ router.get("/rules", async (req, res) => {
 // Trigger a specific workflow
 router.post("/trigger", async (req, res) => {
   const { name, payload } = req.body;
+
   if (!name) {
-    return res.status(400).json({ success: false, message: "Nama workflow diperlukan" });
+    return res.status(400).json({
+      success: false,
+      message: "Nama workflow diperlukan"
+    });
   }
-  const result = await workflow.trigger(name, payload || {});
-  res.json({ success: true, data: result });
+
+  try {
+    const result = await vflow.triggerWorkflow(name, payload || {});
+
+    return res.json({
+      success: true,
+      source: 'vflow',
+      data: result
+    });
+  } catch (error) {
+    if (!vflow.config.fallbackLocal) {
+      return res.status(502).json({
+        success: false,
+        source: 'vflow',
+        message: error.message,
+        detail: error.responseData || null,
+      });
+    }
+
+    const result = await workflow.trigger(name, payload || {});
+
+    return res.json({
+      success: true,
+      source: 'local-fallback',
+      data: result
+    });
+  }
 });
 
 // Run full pipeline
