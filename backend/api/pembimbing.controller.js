@@ -45,17 +45,17 @@ router.get('/students', authMiddleware, async (req, res) => {
 
     const rows = await db.all(
       `SELECT
-        i.id AS internshipId,
+        i.id AS "internshipId",
         i.user_email,
 
         -- Student (wajib dari users)
-        us.name AS studentName,
-        us.nim AS studentNim,
+        us.name AS "studentName",
+        us.nim AS "studentNim",
 
         -- Pembimbing (wajib dari users)
-        ub.name AS pembimbingName,
-        ub.nip AS pembimbingNip,
-        ub.email AS pembimbingEmail,
+        ub.name AS "pembimbingName",
+        ub.nip AS "pembimbingNip",
+        ub.email AS "pembimbingEmail",
 
         i.company,
         i.status,
@@ -63,9 +63,9 @@ router.get('/students', authMiddleware, async (req, res) => {
         i.year,
         i.prodi
       FROM internships i
-      LEFT JOIN users us ON us.email = i.user_email
-      LEFT JOIN users ub ON ub.email = i.pembimbing_email AND ub.role = 'pembimbing'
-      WHERE i.pembimbing_email = ?
+      LEFT JOIN users us ON LOWER(us.email) = LOWER(i.user_email)
+      LEFT JOIN users ub ON LOWER(ub.email) = LOWER(i.pembimbing_email) AND ub.role = 'pembimbing'
+      WHERE LOWER(i.pembimbing_email) = LOWER(?)
       ORDER BY i.created_at DESC`,
       [pembimbing.email]
     );
@@ -79,29 +79,54 @@ router.get('/students', authMiddleware, async (req, res) => {
       }
     }
 
-    const students = Array.from(byStudent.values()).map(r => ({
-      internshipId: r.internshipId,
-      userEmail: r.user_email,
+    // Enrich students with report count and average score
+    const students = Array.from(byStudent.values()).map(async (r) => {
+      // Count reports for this student
+      const reportCountResult = await db.get(
+        'SELECT COUNT(*) as count FROM reports WHERE internship_id = ?',
+        [r.internshipId]
+      );
+      const reportCount = parseInt(reportCountResult?.count || 0);
 
-      // Pastikan studentName/studentNim murni dari users
-      studentName: r.studentName,
-      studentNim: r.studentNim ?? null,
+      // Calculate average score from feedbacks
+      const feedbacks = await db.all(
+        `SELECT score FROM feedbacks
+         WHERE student_id = ? AND internship_id = ?`,
+        [r.studentNim || r.user_email, r.internshipId]
+      );
+      
+      const scores = feedbacks.filter(f => f.score).map(f => f.score);
+      const avgScore = scores.length > 0 
+        ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+        : null;
 
-      company: r.company || '-',
-      status: r.status || 'pending',
-      progress: r.progress ?? 0,
+      return {
+        internshipId: r.internshipId,
+        userEmail: r.user_email,
 
-      pembimbing: {
-        name: r.pembimbingName ?? null,
-        nip: r.pembimbingNip ?? null,
-        email: r.pembimbingEmail ?? null,
-      },
+        // Pastikan studentName/studentNim murni dari users
+        studentName: r.studentName,
+        studentNim: r.studentNim ?? null,
 
-      // nilai belum tersedia di schema sekarang
-      score: null,
-    }));
+        company: r.company || '-',
+        status: r.status || 'pending',
+        progress: r.progress ?? 0,
 
-    res.json({ success: true, data: { students } });
+        pembimbing: {
+          name: r.pembimbingName ?? null,
+          nip: r.pembimbingNip ?? null,
+          email: r.pembimbingEmail ?? null,
+        },
+
+        // Add enriched data
+        reportCount,
+        avgScore,
+      };
+    });
+
+    const resolvedStudents = await Promise.all(students);
+
+    res.json({ success: true, data: { students: resolvedStudents } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Failed to get students' });

@@ -10,6 +10,7 @@ const workflow = require("../services/workflow.service");
 const nats = require("../services/nats.service");
 const audit = require("../services/audit.service");
 const db = require("../integrations/database.client");
+const vflow = require("../integrations/vflow.client");
 const authMiddleware = require("../middleware/auth.middleware");
 
 // ─── Multer config ──────────────────────────────
@@ -46,16 +47,15 @@ const upload = multer({
 
 // ==============================
 // REGISTER - Workflow 1: Internship Registration
+// Backend bertindak sebagai caller ke VFlow.
 // ==============================
 router.post("/register", upload.array("documents", 10), async (req, res) => {
     try {
-        // Multer parses multipart/form-data
-        // req.body contains text fields, req.files contains uploaded files
         const data = req.body;
+
         console.log('[REGISTER] Received body fields:', JSON.stringify(data, null, 2));
         console.log('[REGISTER] Received files:', (req.files || []).map(f => f.originalname));
 
-        // Attach file info to data for the workflow
         const uploadedDocs = (req.files || []).map(file => ({
             fieldname: file.fieldname,
             originalname: file.originalname,
@@ -65,45 +65,80 @@ router.post("/register", upload.array("documents", 10), async (req, res) => {
             mimetype: file.mimetype,
         }));
 
-        // Add documents info and auth user data
         const payload = {
             ...data,
             uploadedFiles: uploadedDocs,
-            user: req.user || null, // from auth middleware if present
+            user: req.user || null,
+            submittedAt: new Date().toISOString(),
+            source: 'backend-express-caller',
         };
 
-        console.log('[REGISTER] Triggering wf_registration with:', { name: payload.name, nim: payload.nim, email: payload.email });
-
-        // Trigger W1: Registration workflow
-        const result = await workflow.trigger("wf_registration", payload);
-
-        if (result.status === 'failed') {
+        if (!payload.email || !payload.name || !payload.nim) {
             return res.status(400).json({
                 success: false,
-                message: result.message || "Pendaftaran gagal",
-                data: result
+                message: 'Nama, NIM, dan email diperlukan'
             });
         }
 
-        // If registration success, auto-trigger W2: Eligibility
-        const internshipId = result.data?.internshipId;
-        let eligibilityResult = null;
-        if (internshipId) {
-            eligibilityResult = await workflow.trigger("wf_eligibility", { internshipId });
+        console.log('[REGISTER] Calling VFlow webhook:', vflow.config.paths.registration);
+
+        let vflowResult;
+
+        try {
+            vflowResult = await vflow.triggerRegistration(payload);
+        } catch (vflowError) {
+            console.error('[REGISTER] VFlow error:', vflowError.message, vflowError.responseData || '');
+
+            if (!vflow.config.fallbackLocal) {
+                return res.status(502).json({
+                    success: false,
+                    message: 'VFlow registration gagal. Pastikan workflow /webhook/kelompok1/internship/register sudah diprovision dan path-nya benar.',
+                    detail: vflowError.responseData || vflowError.message,
+                    path: vflow.config.paths.registration,
+                });
+            }
+
+            console.warn('[REGISTER] Falling back to local workflow because VFLOW_FALLBACK_LOCAL=true');
+
+            const localResult = await workflow.trigger("wf_registration", payload);
+
+            return res.status(localResult.status === 'failed' ? 400 : 200).json({
+                success: localResult.status !== 'failed',
+                source: 'local-fallback',
+                message: localResult.message || 'Diproses lewat local fallback workflow',
+                data: localResult,
+            });
         }
+
+        const vflowData = vflowResult.data || {};
+        const workflowStatus = vflowData.status || vflowData.registrationStatus || 'received';
+        const internshipId = vflowData.internshipId || vflowData.internship_id || vflowData.id || null;
+
+        await audit.log({
+            action: 'REGISTER_INTERNSHIP_VFLOW',
+            data: {
+                path: vflow.config.paths.registration,
+                email: payload.email,
+                nim: payload.nim,
+                status: workflowStatus,
+                vflowResponse: vflowData,
+            },
+        });
 
         res.json({
             success: true,
-            message: "Pendaftaran berhasil diproses",
+            source: 'vflow',
+            message: 'Pendaftaran berhasil dikirim dan diproses melalui VFlow',
             data: {
-                registration: result,
-                eligibility: eligibilityResult,
+                vflow: vflowResult,
                 internshipId,
-                uploadedFiles: uploadedDocs.map(f => f.originalname)
+                registrationStatus: workflowStatus,
+                uploadedFiles: uploadedDocs.map(f => f.originalname),
             }
         });
     } catch (err) {
         console.error("[INTERNSHIP] Register error:", err);
+
         res.status(500).json({
             success: false,
             message: err.message || "Terjadi kesalahan saat pendaftaran"
@@ -273,7 +308,7 @@ router.post("/certify", authMiddleware, async (req, res) => {
     }
 });
 
-// Admin create internship directly (bypass workflow)
+// Admin create/update internship directly (bypass workflow) - UPSERT by user_email
 router.post('/admin/create', authMiddleware, async (req, res) => {
     try {
         if (!req.user || req.user.role !== 'admin') {
@@ -285,17 +320,43 @@ router.post('/admin/create', authMiddleware, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Email diperlukan' });
         }
 
-        const result = await db.run(
-            `INSERT INTO internships (name, nim, user_email, prodi, year, status, company, pembimbing_email) 
-             VALUES (?,?,?,?,?,?,?,?)`,
-            [name || null, nim || null, email, prodi || null, year || null, status || 'pending', company || null, pembimbing_email || null]
+        // Check if an internship already exists for this email
+        const existing = await db.get(
+            'SELECT id FROM internships WHERE user_email = ? ORDER BY created_at DESC LIMIT 1',
+            [email]
         );
 
-        const internship = await db.get('SELECT * FROM internships WHERE id=?', [result.id]);
+        let internship;
+        if (existing) {
+            // UPDATE existing internship
+            await db.run(
+                `UPDATE internships SET 
+                    name = COALESCE(?, name),
+                    nim = COALESCE(?, nim),
+                    prodi = COALESCE(?, prodi),
+                    year = COALESCE(?, year),
+                    status = COALESCE(?, status),
+                    company = COALESCE(?, company),
+                    pembimbing_email = COALESCE(?, pembimbing_email),
+                    updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                [name || null, nim || null, prodi || null, year || null, status || null, company || null, pembimbing_email || null, existing.id]
+            );
+            internship = await db.get('SELECT * FROM internships WHERE id=?', [existing.id]);
+        } else {
+            // INSERT new internship
+            const result = await db.run(
+                `INSERT INTO internships (name, nim, user_email, prodi, year, status, company, pembimbing_email) 
+                 VALUES (?,?,?,?,?,?,?,?)`,
+                [name || null, nim || null, email, prodi || null, year || null, status || 'pending', company || null, pembimbing_email || null]
+            );
+            internship = await db.get('SELECT * FROM internships WHERE id=?', [result.id]);
+        }
+
         res.json({ success: true, data: internship });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ success: false, message: 'Failed to create internship' });
+        res.status(500).json({ success: false, message: 'Failed to create/update internship' });
     }
 });
 

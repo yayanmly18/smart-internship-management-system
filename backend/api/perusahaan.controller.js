@@ -14,14 +14,28 @@ const authMiddleware = require('../middleware/auth.middleware');
 // Agar konsisten, kita implement tabel companies baru jika belum ada.
 
 async function ensureCompaniesTable() {
-  await db.run(`CREATE TABLE IF NOT EXISTS companies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE,
-    city TEXT,
-    bidang TEXT,
-    quota INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-  )`);
+  // Check if using PostgreSQL or SQLite
+  const isPostgreSQL = process.env.DATABASE_URL;
+  
+  if (isPostgreSQL) {
+    await db.run(`CREATE TABLE IF NOT EXISTS companies (
+      id SERIAL PRIMARY KEY,
+      name TEXT UNIQUE,
+      city TEXT,
+      bidang TEXT,
+      quota INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+  } else {
+    await db.run(`CREATE TABLE IF NOT EXISTS companies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE,
+      city TEXT,
+      bidang TEXT,
+      quota INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+  }
 }
 
 // List companies (admin + pembimbing + mahasiswa)

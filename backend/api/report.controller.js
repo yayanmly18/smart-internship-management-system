@@ -26,7 +26,7 @@ async function streamExcel(res, title, buildWorkbook) {
 }
 
 // 1) Rekap Nilai Semester (PDF)
-router.get('/reports/semester-grades', authMiddleware, async (req, res) => {
+router.get('/semester-grades', authMiddleware, async (req, res) => {
   try {
     if (!req.user || req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden' });
 
@@ -55,7 +55,7 @@ router.get('/reports/semester-grades', authMiddleware, async (req, res) => {
 });
 
 // 2) Daftar Mahasiswa Aktif (XLSX)
-router.get('/reports/active-students', authMiddleware, async (req, res) => {
+router.get('/active-students', authMiddleware, async (req, res) => {
   try {
     if (!req.user || req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden' });
 
@@ -98,7 +98,7 @@ router.get('/reports/active-students', authMiddleware, async (req, res) => {
 });
 
 // 3) Statistik Perusahaan (PDF)
-router.get('/reports/company-stats', authMiddleware, async (req, res) => {
+router.get('/company-stats', authMiddleware, async (req, res) => {
   try {
     if (!req.user || req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden' });
 
@@ -161,7 +161,7 @@ router.get('/stats', async (req, res) => {
 });
 
 // 4) Laporan Evaluasi (PDF)
-router.get('/reports/evaluation', authMiddleware, async (req, res) => {
+router.get('/evaluation', authMiddleware, async (req, res) => {
   try {
     if (!req.user || req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden' });
 

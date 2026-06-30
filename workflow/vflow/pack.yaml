@@ -1,9 +1,80 @@
-pack:
-  id: kelompok1/db-pack
-  version: 1.0.0
-  connections:
-    - name: postgres-utama
-      type: postgres
+# Kelompok 1 Connection Pack Configuration
+# This pack defines database connections for VFlow workflows
+# Reference: /home/abraham/magang/aws-test-vflow/provision-pattern/066-hot-connection-pack-provision
+
+apiVersion: v1
+kind: ConnectionPack
+metadata:
+  id: kelompok1-internship
+  name: "Kelompok 1 - Internship Management System"
+  description: "Connection pack for Kelompok 1 database and services"
+  tags: [kelompok1, internship, database]
+
+spec:
+  # Primary database connection
+  connectors:
+    - id: primary
+      name: "Primary Database"
+      type: postgresql
+      description: "PostgreSQL database for Kelompok 1 via tunnel"
+      
+      # Connection configuration
       config:
-        # User: postgres, Password: admin123, DB: kelompok1_internship, Host: db-tunnel.vastar.id, Port: 15431
-        dsn: "postgresql://postgres:admin123@db-tunnel.vastar.id:15431/kelompok1_internship"
+        # IMPORTANT: Use tunnel host, NOT localhost
+        # The tunnel is exposed at db-tunnel.vastar.id:15431
+        host: db-tunnel.vastar.id
+        port: 15431
+        
+        # Database credentials - replace with actual values
+        # These should be set via environment variables or secrets
+        database: "${KELOMPOK1_DATABASE_NAME}"
+        username: "${KELOMPOK1_DATABASE_USER}"
+        password: "${KELOMPOK1_DATABASE_PASSWORD}"
+        
+        # Connection pool settings
+        pool:
+          min: 2
+          max: 10
+          idle: 30
+          
+      # Connection validation
+      validation:
+        enabled: true
+        query: "SELECT 1"
+        interval: 60
+        
+      # Retry policy
+      retry:
+        enabled: true
+        maxAttempts: 3
+        backoff: exponential
+        initialDelay: 1
+        maxDelay: 10
+
+  # Additional service connections (if needed)
+  # Uncomment and configure as needed
+  
+  # - id: nats
+  #   name: "NATS Messaging"
+  #   type: nats
+  #   config:
+  #     url: "${NATS_URL}"
+  #     auth:
+  #       type: token
+  #       token: "${NATS_TOKEN}"
+
+  # - id: http-api
+  #   name: "Backend HTTP API"
+  #   type: http
+  #   config:
+  #     baseURL: "${BACKEND_API_URL}"
+  #     timeout: 30
+
+# Environment variables required for this pack:
+# - KELOMPOK1_DATABASE_NAME: PostgreSQL database name
+# - KELOMPOK1_DATABASE_USER: PostgreSQL username
+# - KELOMPOK1_DATABASE_PASSWORD: PostgreSQL password
+# - VFLOW_PACK_SECRET_KEY_B64: Secret key for pack installation (request from supervisor)
+#
+# Usage in workflow:
+# connector_ref: "pack://kelompok1-internship/primary"
