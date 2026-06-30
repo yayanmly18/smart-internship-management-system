@@ -1,0 +1,17 @@
+$id: "kelompok1-registration-schema"
+title: "Validasi Register Kelompok 1"
+type: object
+required:
+  - name
+  - nim
+  - email
+properties:
+  name:
+    type: string
+    minLength: 3
+  nim:
+    type: string
+    minLength: 5
+  email:
+    type: string
+    format: email

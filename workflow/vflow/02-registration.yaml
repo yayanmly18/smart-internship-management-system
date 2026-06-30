@@ -1,0 +1,88 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-registration
+  name: "Kelompok 1 - Internship Registration"
+  dialect: vflow
+  tags: [kelompok1, internship, registration]
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: fastpath   # Boleh tetep fastpath, karena kita udah pake Transform
+        webhook_config:
+          path: /webhook/kelompok1/internship/register
+          method: POST
+        response_framing: length_prefixed
+        end_activity: respond
+      output_variable: trigger_payload
+
+    - id: insert_db
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: vil_query
+            dialect: postgres
+            source: |
+              insert("users")
+                .insert_columns("name, nim, email, password, prodi, year, phone, role, created_at")
+                .value([
+                  trigger_payload.name,
+                  trigger_payload.nim,
+                  trigger_payload.email,
+                  trigger_payload.password,
+                  trigger_payload.prodi,
+                  trigger_payload.year,
+                  trigger_payload.phone,
+                  "student",
+                  now()
+                ])
+                .returning("id")   # ✅ Ganti .suffix jadi .returning
+      output_variable: db_result
+
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: '{
+              "status": "success",
+              "message": "Registration successful",
+              "data": {
+                "id": db_result.rows[0].id,
+                "name": trigger_payload.name,
+                "nim": trigger_payload.nim,
+                "email": trigger_payload.email
+              }
+            }'
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+    - id: end
+      activity_type: End
+
+  flows:
+    - { id: f01, from: { node: trigger }, to: { node: insert_db } }
+    - { id: f02, from: { node: insert_db }, to: { node: shape_response } }
+    - { id: f03, from: { node: shape_response }, to: { node: respond } }
+    - { id: f04, from: { node: respond }, to: { node: end } }
+
+  variables:
+    - { name: trigger_payload, type: object }
+    - { name: db_result, type: object }
+    - { name: final_response, type: object }

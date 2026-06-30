@@ -1,0 +1,29 @@
+version: "3.0"
+metadata:
+  id: kelompok1-minimal
+  name: "Kelompok 1 - Minimal"
+  dialect: vflow
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/minimal
+          method: POST
+        end_activity: respond
+      output_variable: trigger_payload
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: literal
+          source: '{"ok":true}'
+
+  flows:
+    - { id: f1, from: { node: trigger }, to: { node: respond } }

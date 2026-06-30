@@ -1,0 +1,63 @@
+version: "3.0"
+metadata:
+  id: kelompok1-registration-standard
+  name: "Kelompok 1 - Registration (Standard)"
+  dialect: vflow
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/register/std
+          method: POST
+        response_framing: chunked # ✅ GANTI KE CHUNKED
+        end_activity: respond
+      output_variable: trigger_payload
+
+    - id: insert_db
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "INSERT INTO users (name, nim, email, password, prodi, year, phone, role, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) RETURNING id"
+        - target: params
+          source:
+            language: v-cel
+            source: '[trigger_payload.name, trigger_payload.nim, trigger_payload.email, trigger_payload.password, trigger_payload.prodi, trigger_payload.year, trigger_payload.phone, "student"]'
+      output_variable: db_result
+
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: '{"status":"success","message":"Registration successful","id": db_result.rows[0].id}'
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger }, to: { node: insert_db } }
+    - { id: f2, from: { node: insert_db }, to: { node: shape_response } }
+    - { id: f3, from: { node: shape_response }, to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload, type: object }
+    - { name: db_result, type: object }
+    - { name: final_response, type: object }

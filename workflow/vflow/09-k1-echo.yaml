@@ -1,9 +1,9 @@
 version: "3.0"
 metadata:
-  id: kelompok1-internship-register-test
-  name: "Kelompok 1 - Internship Register Test"
+  id: k1-echo-test
+  name: "K1 - Echo Test"
   dialect: vflow
-  tags: [kelompok1, internship, test]
+  tags: [k1, test]
 
 spec:
   activities:
@@ -11,10 +11,9 @@ spec:
       activity_type: Trigger
       trigger_config:
         trigger_type: webhook
-        runtime_mode: fastpath
+        runtime_mode: standard
         webhook_config:
-          path: /webhook/kelompok1/internship/register-test
-          body_schema: "file://schemas/registration-request.yaml"
+          path: /webhook/k1/echo
           method: POST
         response_framing: length_prefixed
         end_activity: respond
@@ -26,7 +25,7 @@ spec:
         - target: response
           source:
             language: v-cel
-            source: '{"status":"received","source":"vflow","name":trigger_payload.name,"nim":trigger_payload.nim,"email":trigger_payload.email}'
+            source: '{"status":"ok","source":"vflow","test":"k1-echo"}'
       output_variable: final_response
 
     - id: respond
@@ -41,9 +40,9 @@ spec:
       activity_type: End
 
   flows:
-    - { id: f01, from: { node: trigger }, to: { node: shape_response } }
-    - { id: f02, from: { node: shape_response }, to: { node: respond } }
-    - { id: f03, from: { node: respond }, to: { node: end } }
+    - { id: f1, from: { node: trigger }, to: { node: shape_response } }
+    - { id: f2, from: { node: shape_response }, to: { node: respond } }
+    - { id: f3, from: { node: respond }, to: { node: end } }
 
   variables:
     - { name: trigger_payload, type: object }
