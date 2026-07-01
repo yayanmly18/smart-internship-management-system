@@ -1,0 +1,105 @@
+version: 1
+decision_id: vrule_performance_grading
+decision_name: "Kelompok 1 - Performance Grading"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: final_score
+      type: number
+      expression: evaluation.final_score
+    - name: attendance_pct
+      type: number
+      expression: evaluation.attendance_pct
+  outputs:
+    - name: grade
+      type: string
+    - name: pass_status
+      type: string
+    - name: decision
+      type: string
+
+rules:
+  - id: r_grade_a
+    priority: 50
+    enabled: true
+    description: "Nilai A — skor >= 90"
+    when: final_score >= 90
+    then:
+      - kind: SET_FIELD
+        path: grade
+        value: "A"
+      - kind: SET_FIELD
+        path: pass_status
+        value: "PASS"
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_grade_b
+    priority: 40
+    enabled: true
+    description: "Nilai B — skor 80-89"
+    when: final_score >= 80 AND final_score < 90
+    then:
+      - kind: SET_FIELD
+        path: grade
+        value: "B"
+      - kind: SET_FIELD
+        path: pass_status
+        value: "PASS"
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_grade_c
+    priority: 30
+    enabled: true
+    description: "Nilai C — skor 70-79"
+    when: final_score >= 70 AND final_score < 80
+    then:
+      - kind: SET_FIELD
+        path: grade
+        value: "C"
+      - kind: SET_FIELD
+        path: pass_status
+        value: "PASS"
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_grade_d
+    priority: 20
+    enabled: true
+    description: "Nilai D — skor 60-69 (batas bawah lulus)"
+    when: final_score >= 60 AND final_score < 70
+    then:
+      - kind: SET_FIELD
+        path: grade
+        value: "D"
+      - kind: SET_FIELD
+        path: pass_status
+        value: "PASS"
+      - kind: EMIT
+        severity: WARN
+        code: GRADE_BELOW_AVERAGE
+        field: evaluation.final_score
+        msg: "Nilai D — di bawah rata-rata, perlu perhatian"
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_grade_e
+    priority: 10
+    enabled: true
+    description: "Nilai E — skor < 60 (tidak lulus)"
+    when: final_score < 60
+    then:
+      - kind: SET_FIELD
+        path: grade
+        value: "E"
+      - kind: SET_FIELD
+        path: pass_status
+        value: "FAIL"
+      - kind: EMIT
+        severity: ERROR
+        code: BELOW_PASSING_SCORE
+        field: evaluation.final_score
+        msg: "Skor di bawah 60, mahasiswa tidak lulus magang"
+      - kind: SET_DECISION
+        decision: REJECT

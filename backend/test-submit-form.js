@@ -62,7 +62,7 @@ const body = buildMultipart(fields, files);
 
 const options = {
     hostname: 'localhost',
-    port: 3001,
+    port: 3000,
     path: '/api/internship/register',
     method: 'POST',
     headers: {

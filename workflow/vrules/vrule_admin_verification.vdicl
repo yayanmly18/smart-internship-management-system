@@ -1,0 +1,95 @@
+version: 1
+decision_id: vrule_admin_verification
+decision_name: "Kelompok 1 - Admin Verification"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: document_complete
+      type: boolean
+      expression: internship.document_complete
+    - name: academic_data_valid
+      type: boolean
+      expression: internship.academic_data_valid
+    - name: eligibility_passed
+      type: boolean
+      expression: internship.eligibility_passed
+  outputs:
+    - name: verification_status
+      type: string
+    - name: rejection_reason
+      type: string
+
+rules:
+  - id: r_verified
+    priority: 20
+    enabled: true
+    description: "Terverifikasi jika dokumen lengkap, data akademik valid, dan sudah eligible"
+    when: document_complete == true AND academic_data_valid == true AND eligibility_passed == true
+    then:
+      - kind: SET_FIELD
+        path: verification_status
+        value: "ADMIN_VERIFIED"
+      - kind: ADD_SCORE
+        score_delta: 25
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_incomplete_docs
+    priority: 15
+    enabled: true
+    description: "Dokumen tidak lengkap"
+    when: document_complete == false
+    then:
+      - kind: SET_FIELD
+        path: verification_status
+        value: "REJECTED"
+      - kind: SET_FIELD
+        path: rejection_reason
+        value: "INCOMPLETE_DOCUMENT"
+      - kind: EMIT
+        severity: ERROR
+        code: INCOMPLETE_DOCUMENT
+        field: internship.document_complete
+        msg: "Dokumen persyaratan tidak lengkap"
+      - kind: SET_DECISION
+        decision: REJECT
+
+  - id: r_invalid_academic
+    priority: 10
+    enabled: true
+    description: "Data akademik tidak valid"
+    when: academic_data_valid == false
+    then:
+      - kind: SET_FIELD
+        path: verification_status
+        value: "REJECTED"
+      - kind: SET_FIELD
+        path: rejection_reason
+        value: "INVALID_ACADEMIC_DATA"
+      - kind: EMIT
+        severity: ERROR
+        code: INVALID_ACADEMIC_DATA
+        field: internship.academic_data_valid
+        msg: "Data akademik tidak valid atau tidak dapat diverifikasi"
+      - kind: SET_DECISION
+        decision: REJECT
+
+  - id: r_not_eligible
+    priority: 5
+    enabled: true
+    description: "Mahasiswa belum lulus eligibility check"
+    when: eligibility_passed == false
+    then:
+      - kind: SET_FIELD
+        path: verification_status
+        value: "REJECTED"
+      - kind: SET_FIELD
+        path: rejection_reason
+        value: "NOT_ELIGIBLE"
+      - kind: EMIT
+        severity: ERROR
+        code: NOT_ELIGIBLE
+        field: internship.eligibility_passed
+        msg: "Mahasiswa belum memenuhi syarat eligibility (GPA/semester)"
+      - kind: SET_DECISION
+        decision: REJECT

@@ -6,30 +6,29 @@ Workflow-based Internship Management System dengan integrasi VFlow untuk proses 
 
 ## Quick Start
 
-### 1. Install Dependencies
-```bash
-# Backend
-cd backend && npm install
+### 1. Setup Menggunakan Script Otomatis (Direkomendasikan)
+Cara termudah untuk memulai adalah dengan menjalankan skrip setup. Skrip ini akan melakukan instalasi, setup database PostgreSQL, dan menanyakan kredensial VFlow Anda.
 
-# Frontend
-cd ../frontend && npm install
+**Untuk Pengguna Windows:**
+Klik dua kali (double-click) pada file `setup-all.bat` atau jalankan via Command Prompt:
+```cmd
+setup-all.bat
 ```
 
-### 2. Setup Database
+**Untuk Pengguna Mac/Linux:**
 ```bash
-# Buat database PostgreSQL
-psql -U postgres -c "CREATE DATABASE kelompok1_internship;"
-
-# Setup environment
-cp backend/.env.example backend/.env
-# Edit backend/.env dengan kredensial PostgreSQL 
-
-# Run migration
-cd backend && node scripts/migrate-to-postgresql.js
-
-# Create admin user
-node scripts/seed-admin-postgres.js
+chmod +x setup-all.sh
+./setup-all.sh
 ```
+> [!NOTE]
+> Anda akan diminta untuk memasukkan token/key VFlow dan URL database. Kredensial yang dimasukkan akan otomatis disimpan ke dalam `backend/.env` secara aman (tidak akan ter-push ke GitHub).
+
+### 2. Setup Manual (Opsional)
+Jika Anda tidak menggunakan skrip otomatis, Anda bisa melakukan setup secara manual:
+1. `cd backend && npm install` lalu `cd ../frontend && npm install`
+2. Buat database `kelompok1_internship` di PostgreSQL.
+3. Duplikat file `backend/.env.example` menjadi `backend/.env` dan isi nilai kredensialnya.
+4. Jalankan migrasi: `cd backend && node scripts/migrate-to-postgresql.js`
 
 ### 3. Run Application
 ```bash

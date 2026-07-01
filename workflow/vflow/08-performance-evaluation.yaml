@@ -1,0 +1,168 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-performance-evaluation
+  name: "Kelompok 1 - Performance Evaluation"
+  dialect: vflow
+  tags: [kelompok1, internship, evaluation, grading]
+
+# Workflow 7: Performance Evaluation
+# Trigger: POST /webhook/kelompok1/internship/evaluation
+# Input: { internship_id, supervisor_rating (0-100), company_rating (0-100), attendance_pct (0-100) }
+# Logic: Final score = progress(30%) + supervisor(30%) + company(25%) + attendance(15%)
+# Grade: A(90+), B(80+), C(70+), D(60+), E(<60)
+# Output: { final_score, grade, status }
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/internship/evaluation
+          method: POST
+        response_framing: chunked
+        end_activity: respond
+      output_variable: trigger_payload
+
+    # Fetch internship + reports count
+    - id: fetch_data
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT i.id, i.progress, i.user_email, i.name, i.company, (SELECT COUNT(*) FROM reports r WHERE r.internship_id = i.id) as report_count FROM internships i WHERE i.id = $1 LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.internship_id]"
+      output_variable: internship_data
+
+    # Calculate final grade
+    - id: calc_grade
+      activity_type: Transform
+      input_mappings:
+        - target: result
+          source:
+            language: v-cel
+            source: |
+              {
+                "internship_id": trigger_payload.internship_id,
+                "report_count": internship_data.rows[0].report_count,
+                "progress_score": (internship_data.rows[0].report_count >= 12) ? 100 :
+                                  (internship_data.rows[0].report_count >= 8) ? 80 :
+                                  (internship_data.rows[0].report_count >= 4) ? 60 : 40,
+                "supervisor_rating": trigger_payload.supervisor_rating,
+                "company_rating": trigger_payload.company_rating,
+                "attendance_pct": trigger_payload.attendance_pct,
+                "final_score": (
+                  ((internship_data.rows[0].report_count >= 12) ? 100 : (internship_data.rows[0].report_count >= 8) ? 80 : 60) * 0.30 +
+                  trigger_payload.supervisor_rating * 0.30 +
+                  trigger_payload.company_rating * 0.25 +
+                  trigger_payload.attendance_pct * 0.15
+                ),
+                "grade": (
+                  ((internship_data.rows[0].report_count >= 12 ? 100 : 80) * 0.30 + trigger_payload.supervisor_rating * 0.30 + trigger_payload.company_rating * 0.25 + trigger_payload.attendance_pct * 0.15) >= 90 ? "A" :
+                  ((internship_data.rows[0].report_count >= 12 ? 100 : 80) * 0.30 + trigger_payload.supervisor_rating * 0.30 + trigger_payload.company_rating * 0.25 + trigger_payload.attendance_pct * 0.15) >= 80 ? "B" :
+                  ((internship_data.rows[0].report_count >= 12 ? 100 : 80) * 0.30 + trigger_payload.supervisor_rating * 0.30 + trigger_payload.company_rating * 0.25 + trigger_payload.attendance_pct * 0.15) >= 70 ? "C" :
+                  ((internship_data.rows[0].report_count >= 12 ? 100 : 80) * 0.30 + trigger_payload.supervisor_rating * 0.30 + trigger_payload.company_rating * 0.25 + trigger_payload.attendance_pct * 0.15) >= 60 ? "D" : "E"
+                )
+              }
+      output_variable: grade_result
+
+    # Save evaluation to internship
+    - id: save_grade
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "UPDATE internships SET final_score = $1, grade = $2, status = 'evaluated', updated_at = NOW() WHERE id = $3"
+        - target: params
+          source:
+            language: v-cel
+            source: "[grade_result.result.final_score, grade_result.result.grade, trigger_payload.internship_id]"
+      output_variable: save_ok
+
+    # Save feedback record — sesuai schema: (student_id, internship_id, score, comment, created_at)
+    - id: save_feedback
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "INSERT INTO feedbacks (student_id, internship_id, score, comment, created_at) VALUES ($1, $2, $3, $4, NOW())"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                internship_data.rows[0].user_email,
+                trigger_payload.internship_id,
+                grade_result.result.final_score,
+                "Supervisor: " + string(trigger_payload.supervisor_rating) + " | Company: " + string(trigger_payload.company_rating) + " | Attendance: " + string(trigger_payload.attendance_pct) + "%"
+              ]
+      output_variable: feedback_ok
+
+    # Shape response
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: |
+              {
+                "status": "success",
+                "workflow": "performance_evaluation",
+                "internship_id": trigger_payload.internship_id,
+                "final_score": grade_result.result.final_score,
+                "grade": grade_result.result.grade,
+                "internship_status": "evaluated",
+                "breakdown": {
+                  "progress_score": grade_result.result.progress_score,
+                  "supervisor_rating": trigger_payload.supervisor_rating,
+                  "company_rating": trigger_payload.company_rating,
+                  "attendance_pct": trigger_payload.attendance_pct
+                },
+                "source": "vflow"
+              }
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger },       to: { node: fetch_data } }
+    - { id: f2, from: { node: fetch_data },    to: { node: calc_grade } }
+    - { id: f3, from: { node: calc_grade },    to: { node: save_grade } }
+    - { id: f4, from: { node: save_grade },    to: { node: save_feedback } }
+    - { id: f5, from: { node: save_feedback }, to: { node: shape_response } }
+    - { id: f6, from: { node: shape_response },to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload, type: object }
+    - { name: internship_data, type: object }
+    - { name: grade_result,    type: object }
+    - { name: save_ok,         type: object }
+    - { name: feedback_ok,     type: object }
+    - { name: final_response,  type: object }

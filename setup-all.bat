@@ -71,17 +71,30 @@ echo Step 1/5: Loading environment variables
 echo ======================================
 echo.
 
-REM Set environment variables for current session
-set VFLOW_BASE_URL=https://sqavflow.vastar.id
-set VFLOW_TENANT=_default
-set VFLOW_ADMIN_KEY=18539d565293b6476759a5e04cceeb5275971b136aa73a5bddfc10a4fb35d949
-set LOGSTREAM_TOKEN=S8gZXQCDS9TWkol3ARO4Mw7TPtesGnAHIJlONCVcOVc=
-set VFLOW_PACK_SECRET_KEY_B64=eoL945DRr40vXsjYrIhtP4C1xcxwGacZC1R6RspZN/Y=
-set DATABASE_URL=postgresql://postgres:postgres123@127.0.0.1:5432/kelompok1_internship
-set KELOMPOK1_DATABASE_URL=postgresql://postgres:postgres123@db-tunnel.vastar.id:15431/kelompok1_internship
-set KELOMPOK1_DATABASE_NAME=kelompok1_internship
-set KELOMPOK1_DATABASE_USER=postgres
-set KELOMPOK1_DATABASE_PASSWORD=postgres123
+REM Prompt user for environment variables
+echo Please enter the required credentials:
+echo (Tekan Enter saja jika ingin menggunakan nilai default/kosong)
+
+set /p VFLOW_ADMIN_KEY="Enter VFLOW_ADMIN_KEY: "
+set /p LOGSTREAM_TOKEN="Enter LOGSTREAM_TOKEN: "
+set /p VFLOW_PACK_SECRET_KEY_B64="Enter VFLOW_PACK_SECRET_KEY_B64 (Encryption Key): "
+set /p DATABASE_URL="Enter local DATABASE_URL [default: postgresql://postgres:postgres123@127.0.0.1:5432/kelompok1_internship]: "
+if "%DATABASE_URL%"=="" set DATABASE_URL=postgresql://postgres:postgres123@127.0.0.1:5432/kelompok1_internship
+
+set /p KELOMPOK1_DATABASE_URL="Enter KELOMPOK1_DATABASE_URL (Tunnel URL): "
+
+echo.
+echo Writing to backend/.env ...
+(
+    echo VFLOW_BASE_URL=https://sqavflow.vastar.id
+    echo VFLOW_TENANT=_default
+    echo VFLOW_ADMIN_KEY=%VFLOW_ADMIN_KEY%
+    echo LOGSTREAM_TOKEN=%LOGSTREAM_TOKEN%
+    echo VFLOW_PACK_SECRET_KEY_B64=%VFLOW_PACK_SECRET_KEY_B64%
+    echo DATABASE_URL=%DATABASE_URL%
+    echo KELOMPOK1_DATABASE_URL=%KELOMPOK1_DATABASE_URL%
+) > backend\.env
+
 
 echo Environment variables set!
 echo.

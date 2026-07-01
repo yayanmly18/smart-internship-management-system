@@ -1,0 +1,196 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-company-placement
+  name: "Kelompok 1 - Company Placement"
+  dialect: vflow
+  tags: [kelompok1, internship, placement, company]
+
+# Workflow 5: Company Placement Engine
+# Trigger: POST /webhook/kelompok1/internship/placement
+# Input: { internship_id, preferred_company_id (optional) }
+# Logic: Find company with available quota, assign student
+# Output: { company_id, company_name, match_score, status }
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/internship/placement
+          method: POST
+        response_framing: chunked
+        end_activity: respond
+      output_variable: trigger_payload
+
+    # Fetch internship data
+    - id: fetch_internship
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT id, user_email, name, skills, prodi FROM internships WHERE id = $1 LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.internship_id]"
+      output_variable: internship_data
+
+    # Fetch companies dengan quota tersedia
+    - id: fetch_companies
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT id, name, city, bidang, quota FROM companies WHERE quota > 0 ORDER BY quota DESC LIMIT 10"
+        - target: params
+          source:
+            language: literal
+            source: "[]"
+      output_variable: companies_data
+
+    # Matching logic (pilih perusahaan pertama dengan quota)
+    - id: do_matching
+      activity_type: Transform
+      input_mappings:
+        - target: result
+          source:
+            language: v-cel
+            source: |
+              {
+                "internship_id": trigger_payload.internship_id,
+                "company": companies_data.rows[0],
+                "company_id": companies_data.rows[0].id,
+                "company_name": companies_data.rows[0].name,
+                "company_bidang": companies_data.rows[0].bidang,
+                "match_score": 75,
+                "has_company": (companies_data.rows != null && companies_data.rows.length > 0)
+              }
+      output_variable: match_result
+
+    # Assign company ke internship
+    - id: assign_company
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "UPDATE internships SET company = $1, company_bidang = $2, match_score = $3, status = 'company_assigned', updated_at = NOW() WHERE id = $4"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                match_result.result.company_name,
+                match_result.result.company_bidang,
+                match_result.result.match_score,
+                trigger_payload.internship_id
+              ]
+      output_variable: assign_ok
+
+    # Kurangi quota perusahaan
+    - id: decrement_quota
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "UPDATE companies SET quota = GREATEST(0, quota - 1) WHERE id = $1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[match_result.result.company_id]"
+      output_variable: quota_ok
+
+    # Save placement record
+    - id: save_placement
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "INSERT INTO placements (internship_id, company_id, company_name, match_score, status, created_at) VALUES ($1, $2, $3, $4, 'assigned', NOW())"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                trigger_payload.internship_id,
+                match_result.result.company_id,
+                match_result.result.company_name,
+                match_result.result.match_score
+              ]
+      output_variable: placement_ok
+
+    # Shape response
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: |
+              {
+                "status": "success",
+                "workflow": "company_placement",
+                "internship_id": trigger_payload.internship_id,
+                "company_id": match_result.result.company_id,
+                "company_name": match_result.result.company_name,
+                "company_bidang": match_result.result.company_bidang,
+                "match_score": match_result.result.match_score,
+                "internship_status": "company_assigned",
+                "source": "vflow"
+              }
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger },          to: { node: fetch_internship } }
+    - { id: f2, from: { node: fetch_internship },  to: { node: fetch_companies } }
+    - { id: f3, from: { node: fetch_companies },   to: { node: do_matching } }
+    - { id: f4, from: { node: do_matching },       to: { node: assign_company } }
+    - { id: f5, from: { node: assign_company },    to: { node: decrement_quota } }
+    - { id: f6, from: { node: decrement_quota },   to: { node: save_placement } }
+    - { id: f7, from: { node: save_placement },    to: { node: shape_response } }
+    - { id: f8, from: { node: shape_response },    to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload,  type: object }
+    - { name: internship_data,  type: object }
+    - { name: companies_data,   type: object }
+    - { name: match_result,     type: object }
+    - { name: assign_ok,        type: object }
+    - { name: quota_ok,         type: object }
+    - { name: placement_ok,     type: object }
+    - { name: final_response,   type: object }

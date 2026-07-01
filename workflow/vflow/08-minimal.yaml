@@ -14,16 +14,31 @@ spec:
         webhook_config:
           path: /webhook/kelompok1/minimal
           method: POST
+        response_framing: length_prefixed
         end_activity: respond
       output_variable: trigger_payload
+
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: literal
+            source: '{"ok":true,"source":"vflow","workflow":"minimal"}'
+      output_variable: final_response
 
     - id: respond
       activity_type: EndTrigger
       end_trigger_config:
         trigger_ref: trigger
         final_response:
-          language: literal
-          source: '{"ok":true}'
+          language: spv1
+          source: "$.final_response"
 
   flows:
-    - { id: f1, from: { node: trigger }, to: { node: respond } }
+    - { id: f1, from: { node: trigger }, to: { node: shape_response } }
+    - { id: f2, from: { node: shape_response }, to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload, type: object }
+    - { name: final_response, type: object }

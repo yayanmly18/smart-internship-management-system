@@ -1,0 +1,45 @@
+version: 1
+decision_id: vrule_approval_requirement
+decision_name: "Kelompok 1 - Approval Requirement"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: required_approvals
+      type: number
+      expression: approval.required
+    - name: obtained_approvals
+      type: number
+      expression: approval.obtained
+  outputs:
+    - name: approval_status
+      type: string
+
+rules:
+  - id: r_fully_approved
+    priority: 10
+    enabled: true
+    description: "Semua approval yang dibutuhkan sudah didapat"
+    when: obtained_approvals >= required_approvals
+    then:
+      - kind: SET_FIELD
+        path: approval_status
+        value: "APPROVED"
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_pending_approval
+    priority: 5
+    enabled: true
+    description: "Approval belum lengkap"
+    when: obtained_approvals < required_approvals
+    then:
+      - kind: SET_FIELD
+        path: approval_status
+        value: "PENDING"
+      - kind: EMIT
+        severity: INFO
+        code: APPROVAL_PENDING
+        field: approval.obtained
+        msg: "Masih menunggu sisa approval"
+      - kind: SET_DECISION
+        decision: REVIEW

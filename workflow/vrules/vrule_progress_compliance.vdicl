@@ -1,0 +1,78 @@
+version: 1
+decision_id: vrule_progress_compliance
+decision_name: "Kelompok 1 - Progress Compliance"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: report_submitted
+      type: boolean
+      expression: report.submitted
+    - name: lateness_days
+      type: number
+      expression: report.lateness_days
+    - name: week_number
+      type: number
+      expression: report.week_number
+  outputs:
+    - name: compliance_status
+      type: string
+    - name: penalty_score
+      type: number
+
+rules:
+  - id: r_on_time
+    priority: 20
+    enabled: true
+    description: "Laporan submitted tepat waktu atau max 2 hari terlambat"
+    when: report_submitted == true AND lateness_days <= 2
+    then:
+      - kind: SET_FIELD
+        path: compliance_status
+        value: "VALID"
+      - kind: SET_FIELD
+        path: penalty_score
+        value: 0
+      - kind: ADD_SCORE
+        score_delta: 10
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_late
+    priority: 10
+    enabled: true
+    description: "Laporan terlambat > 2 hari"
+    when: report_submitted == true AND lateness_days > 2
+    then:
+      - kind: SET_FIELD
+        path: compliance_status
+        value: "WARNING"
+      - kind: SET_FIELD
+        path: penalty_score
+        value: 5
+      - kind: EMIT
+        severity: WARN
+        code: LATE_SUBMISSION
+        field: report.lateness_days
+        msg: "Laporan terlambat lebih dari 2 hari"
+      - kind: SET_DECISION
+        decision: REVIEW
+
+  - id: r_not_submitted
+    priority: 5
+    enabled: true
+    description: "Laporan belum disubmit"
+    when: report_submitted == false
+    then:
+      - kind: SET_FIELD
+        path: compliance_status
+        value: "MISSING"
+      - kind: SET_FIELD
+        path: penalty_score
+        value: 20
+      - kind: EMIT
+        severity: ERROR
+        code: REPORT_NOT_SUBMITTED
+        field: report.submitted
+        msg: "Laporan mingguan belum disubmit"
+      - kind: SET_DECISION
+        decision: REJECT

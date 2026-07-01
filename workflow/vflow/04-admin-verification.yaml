@@ -1,0 +1,154 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-admin-verification
+  name: "Kelompok 1 - Admin Verification"
+  dialect: vflow
+  tags: [kelompok1, internship, admin, verification]
+
+# Workflow 3: Admin Verification
+# Trigger: POST /webhook/kelompok1/internship/admin-verify
+# Input: { internship_id, admin_id, decision (VERIFIED/REJECTED), notes }
+# Logic: Admin manually verifies documents and data
+# Output: { verified, verification_score, status }
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/internship/admin-verify
+          method: POST
+        response_framing: chunked
+        end_activity: respond
+      output_variable: trigger_payload
+
+    # Fetch internship data
+    - id: fetch_internship
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT i.*, u.gpa, u.semester FROM internships i LEFT JOIN users u ON i.user_email = u.email WHERE i.id = $1 LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.internship_id]"
+      output_variable: internship_data
+
+    # Hitung verification score
+    - id: calc_verification
+      activity_type: Transform
+      input_mappings:
+        - target: result
+          source:
+            language: v-cel
+            source: |
+              {
+                "internship_id": trigger_payload.internship_id,
+                "admin_id": trigger_payload.admin_id,
+                "decision": trigger_payload.decision,
+                "notes": trigger_payload.notes,
+                "doc_score": (internship_data.rows[0].documents != "" && internship_data.rows[0].documents != null) ? 40 : 0,
+                "gpa_score": (internship_data.rows[0].gpa >= 3.5) ? 20 : (internship_data.rows[0].gpa >= 3.0) ? 15 : 10,
+                "admin_score": (trigger_payload.decision == "VERIFIED") ? 25 : 0,
+                "is_verified": (trigger_payload.decision == "VERIFIED")
+              }
+      output_variable: verify_calc
+
+    # Save verification result
+    - id: save_verification
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "UPDATE internships SET status = $1, updated_at = NOW() WHERE id = $2"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                (trigger_payload.decision == "VERIFIED") ? "admin_verified" : "rejected",
+                trigger_payload.internship_id
+              ]
+      output_variable: save_ok
+
+    # Save assessment record
+    - id: save_assessment
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "INSERT INTO assessments (internship_id, assessment_type, score, result, created_at) VALUES ($1, $2, $3, $4, NOW())"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                trigger_payload.internship_id,
+                "admin_verification",
+                verify_calc.result.doc_score + verify_calc.result.gpa_score + verify_calc.result.admin_score,
+                trigger_payload.decision
+              ]
+      output_variable: assessment_ok
+
+    # Shape response
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: |
+              {
+                "status": "success",
+                "workflow": "admin_verification",
+                "internship_id": trigger_payload.internship_id,
+                "decision": trigger_payload.decision,
+                "verified": verify_calc.result.is_verified,
+                "verification_score": verify_calc.result.doc_score + verify_calc.result.gpa_score + verify_calc.result.admin_score,
+                "internship_status": (trigger_payload.decision == "VERIFIED") ? "admin_verified" : "rejected",
+                "source": "vflow"
+              }
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger },          to: { node: fetch_internship } }
+    - { id: f2, from: { node: fetch_internship },  to: { node: calc_verification } }
+    - { id: f3, from: { node: calc_verification }, to: { node: save_verification } }
+    - { id: f4, from: { node: save_verification }, to: { node: save_assessment } }
+    - { id: f5, from: { node: save_assessment },   to: { node: shape_response } }
+    - { id: f6, from: { node: shape_response },    to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload,  type: object }
+    - { name: internship_data,  type: object }
+    - { name: verify_calc,      type: object }
+    - { name: save_ok,          type: object }
+    - { name: assessment_ok,    type: object }
+    - { name: final_response,   type: object }

@@ -3,9 +3,69 @@ const starlark = require("../engine/starlark.engine");
 const vrule = require("./vrule.service");
 const nats = require("./nats.service");
 const audit = require("./audit.service");
+const vflow = require("../integrations/vflow.client");
+const vflowLogger = require("../integrations/vflow-logger");
 
 // ================================================================
-// WORKFLOW ENGINE - All 7 Internship Workflows
+// VFLOW → EXPRESS FALLBACK DISPATCHER
+// Setiap workflow dicoba ke VFlow dulu. Jika VFlow gagal (error,
+// empty response, timeout), fallback otomatis ke implementasi lokal.
+// ================================================================
+
+// Mapping workflow name → VFlow webhook path
+const VFLOW_WORKFLOW_PATHS = {
+  wf_registration:          vflow.config.paths.registration,
+  wf_eligibility:           vflow.config.paths.eligibility,
+  wf_admin_verification:    vflow.config.paths.adminVerify,
+  wf_approval:              vflow.config.paths.approval,
+  wf_company_placement:     vflow.config.paths.placement,
+  wf_progress_monitoring:   vflow.config.paths.progress,
+  wf_performance_evaluation: vflow.config.paths.evaluation,
+  wf_certification:         vflow.config.paths.certification,
+};
+
+/**
+ * Coba trigger workflow via VFlow.
+ * Return null jika VFlow disabled, tidak ada path, atau response kosong/error.
+ * Return result object jika berhasil.
+ */
+async function tryVFlow(workflowName, payload) {
+  if (!vflow.config.enabled || vflow.config.mode === 'local') {
+    vflowLogger.skipped(workflowName);
+    return null;
+  }
+
+  const wfPath = VFLOW_WORKFLOW_PATHS[workflowName];
+  if (!wfPath) return null; // No VFlow mapping, use local directly
+
+  try {
+    const result = await vflow.triggerWebhook(wfPath, payload);
+
+    // VFlow returned a response — check if it has real data
+    if (result && result.ok) {
+      const data = result.data;
+      // If data is an object with status field, treat as successful VFlow response
+      if (data && typeof data === 'object' && (data.status || data.workflow)) {
+        vflowLogger.success(wfPath, { statusCode: result.statusCode });
+        return { ...data, source: 'vflow', _rawBytes: result.rawBytes };
+      }
+      // If rawBytes === 0, VFlow returned empty body — fallback
+      if (result.rawBytes === 0) {
+        vflowLogger.fail(wfPath, new Error('VFlow returned empty body (0 bytes) — SSE proxy issue'));
+        return null;
+      }
+    }
+
+    // skipped/disabled
+    return null;
+  } catch (err) {
+    vflowLogger.fail(wfPath, err);
+    return null; // Trigger fallback
+  }
+}
+
+// ================================================================
+// WORKFLOW ENGINE - All 7 Internship Workflows (Local Implementations)
 // ================================================================
 
 /**
@@ -594,12 +654,32 @@ const workflows = {
 };
 
 /**
- * Trigger a workflow by name
+ * Trigger a workflow by name.
+ * Mencoba VFlow dulu, fallback ke implementasi Express lokal jika VFlow gagal.
  */
 exports.trigger = async (name, payload) => {
+  // ── Step 1: Coba VFlow ────────────────────────────────────────────────────
+  if (vflow.config.fallbackLocal !== false) {
+    const vflowResult = await tryVFlow(name, payload);
+    if (vflowResult !== null) {
+      console.log(`[WORKFLOW] ${name} handled by VFlow`);
+      // Log ke workflow_logs
+      try {
+        await db.run(
+          'INSERT INTO workflow_logs (workflow_name, status, payload) VALUES (?,?,?)',
+          [name, vflowResult.status || 'executed', JSON.stringify({ payload, result: vflowResult, source: 'vflow' })]
+        );
+      } catch { /* log failure tidak boleh crash */ }
+      return vflowResult;
+    }
+    // VFlow gagal atau kosong — lanjut ke fallback
+    vflowLogger.fallback(name, 'VFlow unavailable or empty response');
+  }
+
+  // ── Step 2: Fallback ke implementasi lokal ────────────────────────────────
   const workflow = workflows[name];
   if (!workflow) {
-    // If legacy workflow name, try to handle
+    // Handle legacy workflow names
     if (name === 'wf_upload_report') {
       return wf_progress_monitoring(payload);
     }
@@ -607,19 +687,19 @@ exports.trigger = async (name, payload) => {
   }
 
   try {
-    console.log(`[WORKFLOW] Executing ${name}...`);
+    console.log(`[WORKFLOW] ${name} executing locally (fallback)...`);
     const result = await workflow(payload);
 
     // Log workflow execution
     await db.run(
       'INSERT INTO workflow_logs (workflow_name, status, payload) VALUES (?,?,?)',
-      [name, result.status, JSON.stringify({ payload, result })]
+      [name, result.status, JSON.stringify({ payload, result, source: 'express-fallback' })]
     );
 
-    console.log(`[WORKFLOW] ${name} completed: ${result.status}`);
-    return result;
+    console.log(`[WORKFLOW] ${name} completed locally: ${result.status}`);
+    return { ...result, source: 'express-fallback' };
   } catch (err) {
-    console.error(`[WORKFLOW] ${name} error:`, err);
+    console.error(`[WORKFLOW] ${name} local error:`, err);
     await db.run(
       'INSERT INTO workflow_logs (workflow_name, status, payload) VALUES (?,?,?)',
       [name, 'error', JSON.stringify({ payload, error: err.message })]

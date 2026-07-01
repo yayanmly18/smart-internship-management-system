@@ -1,0 +1,149 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-progress-monitoring
+  name: "Kelompok 1 - Weekly Progress Monitoring"
+  dialect: vflow
+  tags: [kelompok1, internship, progress, monitoring]
+
+# Workflow 6: Weekly Progress Monitoring
+# Trigger: POST /webhook/kelompok1/internship/progress
+# Input: { internship_id, week_number, note, hours_worked, activities, challenges, learnings }
+# Logic: Validate report completeness, save progress report
+# Output: { progress_id, compliance_score, status }
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/internship/progress
+          method: POST
+        response_framing: chunked
+        end_activity: respond
+      output_variable: trigger_payload
+
+    # Validate internship exists & is active
+    - id: validate_internship
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT id, status, progress FROM internships WHERE id = $1 LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.internship_id]"
+      output_variable: internship_data
+
+    # Validate report content
+    - id: validate_report
+      activity_type: Transform
+      input_mappings:
+        - target: result
+          source:
+            language: v-cel
+            source: |
+              {
+                "internship_id": trigger_payload.internship_id,
+                "week": trigger_payload.week_number,
+                "note": trigger_payload.note,
+                "hours": trigger_payload.hours_worked,
+                "has_note": (trigger_payload.note != null && trigger_payload.note != ""),
+                "sufficient_hours": (trigger_payload.hours_worked >= 40),
+                "compliance_score": (trigger_payload.note != null && trigger_payload.note != "") ? 80 : 40,
+                "new_progress": (internship_data.rows[0].progress + 1)
+              }
+      output_variable: validation_result
+
+    # Save progress report
+    - id: save_report
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "INSERT INTO reports (internship_id, week, note, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                trigger_payload.internship_id,
+                trigger_payload.week_number,
+                trigger_payload.note
+              ]
+      output_variable: report_result
+
+    # Update internship progress counter
+    - id: update_progress
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "UPDATE internships SET progress = $1, updated_at = NOW() WHERE id = $2"
+        - target: params
+          source:
+            language: v-cel
+            source: "[validation_result.result.new_progress, trigger_payload.internship_id]"
+      output_variable: update_ok
+
+    # Shape response
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: |
+              {
+                "status": "success",
+                "workflow": "progress_monitoring",
+                "internship_id": trigger_payload.internship_id,
+                "progress_id": report_result.rows[0].id,
+                "week_number": trigger_payload.week_number,
+                "compliance_score": validation_result.result.compliance_score,
+                "new_progress": validation_result.result.new_progress,
+                "source": "vflow"
+              }
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger },             to: { node: validate_internship } }
+    - { id: f2, from: { node: validate_internship },  to: { node: validate_report } }
+    - { id: f3, from: { node: validate_report },      to: { node: save_report } }
+    - { id: f4, from: { node: save_report },          to: { node: update_progress } }
+    - { id: f5, from: { node: update_progress },      to: { node: shape_response } }
+    - { id: f6, from: { node: shape_response },       to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload,     type: object }
+    - { name: internship_data,     type: object }
+    - { name: validation_result,   type: object }
+    - { name: report_result,       type: object }
+    - { name: update_ok,           type: object }
+    - { name: final_response,      type: object }

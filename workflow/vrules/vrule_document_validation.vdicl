@@ -1,0 +1,51 @@
+version: 1
+decision_id: vrule_document_validation
+decision_name: "Kelompok 1 - Document Validation"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: krs_uploaded
+      type: boolean
+      expression: documents.krs_uploaded
+    - name: transcript_uploaded
+      type: boolean
+      expression: documents.transcript_uploaded
+    - name: letter_uploaded
+      type: boolean
+      expression: documents.letter_uploaded
+    - name: cv_uploaded
+      type: boolean
+      expression: documents.cv_uploaded
+  outputs:
+    - name: documents_valid
+      type: boolean
+
+rules:
+  - id: r_all_valid
+    priority: 10
+    enabled: true
+    description: "Semua dokumen wajib terupload"
+    when: krs_uploaded == true AND transcript_uploaded == true AND letter_uploaded == true AND cv_uploaded == true
+    then:
+      - kind: SET_FIELD
+        path: documents_valid
+        value: true
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_missing_docs
+    priority: 5
+    enabled: true
+    description: "Ada dokumen wajib yang belum terupload"
+    when: krs_uploaded == false OR transcript_uploaded == false OR letter_uploaded == false OR cv_uploaded == false
+    then:
+      - kind: SET_FIELD
+        path: documents_valid
+        value: false
+      - kind: EMIT
+        severity: ERROR
+        code: MISSING_REQUIRED_DOCUMENT
+        field: documents
+        msg: "Dokumen wajib belum lengkap"
+      - kind: SET_DECISION
+        decision: REJECT

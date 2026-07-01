@@ -1,0 +1,130 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-eligibility
+  name: "Kelompok 1 - Eligibility Assessment"
+  dialect: vflow
+  tags: [kelompok1, internship, eligibility]
+
+# Workflow 2: Eligibility Assessment
+# Trigger: POST /webhook/kelompok1/internship/eligibility
+# Input: { internship_id, gpa, semester, certificates, organization_exp }
+# Logic: score = GPA(25-40) + semester(20) + certificates(5ea) + org_exp(3ea)
+# Output: { eligible, eligibility_score, status }
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/internship/eligibility
+          method: POST
+        response_framing: chunked
+        end_activity: respond
+      output_variable: trigger_payload
+
+    # Fetch internship + user data dari DB
+    - id: fetch_data
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT i.id, i.user_email, i.name, i.nim, i.prodi, u.gpa, u.semester, u.organization_exp FROM internships i LEFT JOIN users u ON i.user_email = u.email WHERE i.id = $1 LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.internship_id]"
+      output_variable: db_data
+
+    # Hitung eligibility score via v-cel Transform
+    - id: calc_score
+      activity_type: Transform
+      input_mappings:
+        - target: result
+          source:
+            language: v-cel
+            source: |
+              {
+                "internship_id": trigger_payload.internship_id,
+                "gpa": db_data.rows[0].gpa,
+                "semester": db_data.rows[0].semester,
+                "org_exp": db_data.rows[0].organization_exp,
+                "gpa_score": (db_data.rows[0].gpa >= 3.5) ? 40 : (db_data.rows[0].gpa >= 3.0) ? 25 : 0,
+                "semester_score": (db_data.rows[0].semester >= 5) ? 20 : 0,
+                "eligible": (db_data.rows[0].gpa >= 3.0 && db_data.rows[0].semester >= 5)
+              }
+      output_variable: eligibility_calc
+
+    # Save result ke DB
+    - id: save_result
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "UPDATE internships SET eligibility_score = $1, eligibility_passed = $2, status = $3, updated_at = NOW() WHERE id = $4"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                eligibility_calc.result.gpa_score + eligibility_calc.result.semester_score,
+                eligibility_calc.result.eligible ? 1 : 0,
+                eligibility_calc.result.eligible ? "eligible" : "not_eligible",
+                trigger_payload.internship_id
+              ]
+      output_variable: save_ok
+
+    # Shape final response
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: |
+              {
+                "status": "success",
+                "workflow": "eligibility",
+                "internship_id": trigger_payload.internship_id,
+                "eligibility_score": eligibility_calc.result.gpa_score + eligibility_calc.result.semester_score,
+                "eligible": eligibility_calc.result.eligible,
+                "gpa": eligibility_calc.result.gpa,
+                "semester": eligibility_calc.result.semester,
+                "internship_status": eligibility_calc.result.eligible ? "eligible" : "not_eligible",
+                "source": "vflow"
+              }
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger },       to: { node: fetch_data } }
+    - { id: f2, from: { node: fetch_data },    to: { node: calc_score } }
+    - { id: f3, from: { node: calc_score },    to: { node: save_result } }
+    - { id: f4, from: { node: save_result },   to: { node: shape_response } }
+    - { id: f5, from: { node: shape_response}, to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload,    type: object }
+    - { name: db_data,            type: object }
+    - { name: eligibility_calc,   type: object }
+    - { name: save_ok,            type: object }
+    - { name: final_response,     type: object }
