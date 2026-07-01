@@ -1,0 +1,62 @@
+version: 1
+decision_id: vrule_company_matching
+decision_name: "Kelompok 1 - Company Matching"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: match_score
+      type: number
+      expression: placement.match_score
+    - name: company_quota
+      type: number
+      expression: placement.company_quota
+  outputs:
+    - name: placement_status
+      type: string
+
+rules:
+  - id: r_match_success
+    priority: 10
+    enabled: true
+    description: "Match berhasil jika skor kecocokan >= 70 dan masih ada kuota"
+    when: match_score >= 70 AND company_quota > 0
+    then:
+      - kind: SET_FIELD
+        path: placement_status
+        value: "MATCHED"
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_low_score
+    priority: 5
+    enabled: true
+    description: "Match gagal karena skor kecocokan < 70"
+    when: match_score < 70
+    then:
+      - kind: SET_FIELD
+        path: placement_status
+        value: "FAILED"
+      - kind: EMIT
+        severity: ERROR
+        code: LOW_MATCH_SCORE
+        field: placement.match_score
+        msg: "Skor kecocokan di bawah 70"
+      - kind: SET_DECISION
+        decision: REJECT
+
+  - id: r_quota_full
+    priority: 4
+    enabled: true
+    description: "Match gagal karena kuota penuh"
+    when: company_quota <= 0
+    then:
+      - kind: SET_FIELD
+        path: placement_status
+        value: "FAILED"
+      - kind: EMIT
+        severity: ERROR
+        code: QUOTA_FULL
+        field: placement.company_quota
+        msg: "Kuota perusahaan sudah penuh"
+      - kind: SET_DECISION
+        decision: REJECT

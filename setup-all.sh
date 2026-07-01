@@ -41,15 +41,38 @@ fi
 echo "📋 Step 1/5: Loading environment variables..."
 echo ""
 
-if [[ -f "setup-env.sh" ]]; then
-    source setup-env.sh
-    print_success "Environment variables loaded"
-else
-    print_error "setup-env.sh not found!"
-    echo "Please ensure setup-env.sh exists in the current directory"
-    exit 1
-fi
+echo "Please enter the required credentials:"
+echo "(Press Enter to use default/empty values)"
+echo ""
 
+read -p "Enter VFLOW_ADMIN_KEY: " VFLOW_ADMIN_KEY
+read -p "Enter LOGSTREAM_TOKEN: " LOGSTREAM_TOKEN
+read -p "Enter VFLOW_PACK_SECRET_KEY_B64 (Encryption Key): " VFLOW_PACK_SECRET_KEY_B64
+read -p "Enter local DATABASE_URL [default: postgresql://postgres:postgres123@127.0.0.1:5432/kelompok1_internship]: " DATABASE_URL
+DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres123@127.0.0.1:5432/kelompok1_internship}
+read -p "Enter KELOMPOK1_DATABASE_URL (Tunnel URL): " KELOMPOK1_DATABASE_URL
+
+export VFLOW_BASE_URL="https://sqavflow.vastar.id"
+export VFLOW_TENANT="_default"
+export VFLOW_ADMIN_KEY
+export LOGSTREAM_TOKEN
+export VFLOW_PACK_SECRET_KEY_B64
+export DATABASE_URL
+export KELOMPOK1_DATABASE_URL
+
+echo ""
+echo "Writing to backend/.env ..."
+cat <<EOF > backend/.env
+VFLOW_BASE_URL=$VFLOW_BASE_URL
+VFLOW_TENANT=$VFLOW_TENANT
+VFLOW_ADMIN_KEY=$VFLOW_ADMIN_KEY
+LOGSTREAM_TOKEN=$LOGSTREAM_TOKEN
+VFLOW_PACK_SECRET_KEY_B64=$VFLOW_PACK_SECRET_KEY_B64
+DATABASE_URL=$DATABASE_URL
+KELOMPOK1_DATABASE_URL=$KELOMPOK1_DATABASE_URL
+EOF
+
+print_success "Environment variables loaded and saved to backend/.env"
 echo ""
 
 # Step 2: Check prerequisites
@@ -228,7 +251,6 @@ echo ""
 echo "4. Access the application:"
 echo "   - Frontend: ${BLUE}http://localhost:5173${NC}"
 echo "   - Backend API: ${BLUE}http://localhost:3000${NC}"
-echo "   - VFlow Webhook: ${BLUE}https://sqavflow.vastar.id/webhook/kelompok1/internship/register-test${NC}"
 echo ""
 
 echo "📚 Documentation:"
@@ -240,12 +262,6 @@ echo ""
 print_info "Default admin credentials:"
 echo "  Email: admin@example.com"
 echo "  Password: adminpass"
-echo ""
-
-print_warning "Important reminders:"
-echo "  • Run '${GREEN}source setup-env.sh${NC}' in each new terminal session"
-echo "  • Keep your tokens secure - don't commit them to git"
-echo "  • Check RUN_GUIDE.md for troubleshooting"
 echo ""
 
 echo "🎉 Happy coding! - Kelompok 1"

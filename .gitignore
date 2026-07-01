@@ -16,6 +16,7 @@ vflow-admin.sh
 *_key*
 setup-env.sh
 kel1-client.toml
+install-kel1.json
 
 # Database
 *.sqlite

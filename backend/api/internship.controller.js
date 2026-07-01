@@ -82,57 +82,108 @@ router.post("/register", upload.array("documents", 10), async (req, res) => {
 
         console.log('[REGISTER] Calling VFlow webhook:', vflow.config.paths.registration);
 
-        let vflowResult;
+        let vflowResult = null;
+        let localResult = null;
+        let internshipId = null;
+        let workflowStatus = 'received';
+        let source = 'vflow';
 
         try {
             vflowResult = await vflow.triggerRegistration(payload);
+            
+            // Tangani isu SSE (0 bytes response)
+            if (vflowResult && vflowResult.rawBytes === 0) {
+                throw new Error('VFlow returned empty body (0 bytes) — SSE proxy issue');
+            }
+
+            const vflowData = vflowResult.data || {};
+            console.log('[REGISTER] vflowResult.data:', JSON.stringify(vflowData, null, 2));
+            
+            workflowStatus = vflowData.status || vflowData.registrationStatus || 'received';
+            internshipId = vflowData.internshipId || vflowData.internship_id || vflowData.id || null;
+            console.log('[REGISTER] Extracted internshipId from VFlow:', internshipId);
+
+            await audit.log({
+                action: 'REGISTER_INTERNSHIP_VFLOW',
+                data: {
+                    path: vflow.config.paths.registration,
+                    email: payload.email,
+                    nim: payload.nim,
+                    status: workflowStatus,
+                    vflowResponse: vflowData,
+                },
+            });
         } catch (vflowError) {
-            console.error('[REGISTER] VFlow error:', vflowError.message, vflowError.responseData || '');
+            console.error('[REGISTER] VFlow error:', vflowError.message);
 
             if (!vflow.config.fallbackLocal) {
                 return res.status(502).json({
                     success: false,
-                    message: 'VFlow registration gagal. Pastikan workflow /webhook/kelompok1/internship/register sudah diprovision dan path-nya benar.',
+                    message: 'VFlow registration gagal.',
                     detail: vflowError.responseData || vflowError.message,
-                    path: vflow.config.paths.registration,
                 });
             }
 
             console.warn('[REGISTER] Falling back to local workflow because VFLOW_FALLBACK_LOCAL=true');
+            source = 'local-fallback';
+            localResult = await workflow.trigger("wf_registration", payload);
 
-            const localResult = await workflow.trigger("wf_registration", payload);
-
-            return res.status(localResult.status === 'failed' ? 400 : 200).json({
-                success: localResult.status !== 'failed',
-                source: 'local-fallback',
-                message: localResult.message || 'Diproses lewat local fallback workflow',
-                data: localResult,
-            });
+            if (localResult.status === 'failed') {
+                if (localResult.internshipId) {
+                    // Berarti VFlow tadi sebenarnya BERHASIL melakukan INSERT ke database
+                    // namun gagal mengembalikan response karena isu SSE.
+                    // Jadi kita gunakan internshipId yang sudah ada ini.
+                    internshipId = localResult.internshipId;
+                    workflowStatus = 'pending';
+                    console.log('[REGISTER] Recovered internshipId from existing record:', internshipId);
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        source: 'local-fallback',
+                        message: localResult.message || 'Pendaftaran gagal',
+                        data: localResult,
+                    });
+                }
+            } else {
+                internshipId = localResult.data ? localResult.data.internshipId : null;
+                workflowStatus = localResult.data ? localResult.data.registrationStatus : 'received';
+                console.log('[REGISTER] Extracted internshipId from local:', internshipId);
+            }
         }
 
-        const vflowData = vflowResult.data || {};
-        const workflowStatus = vflowData.status || vflowData.registrationStatus || 'received';
-        const internshipId = vflowData.internshipId || vflowData.internship_id || vflowData.id || null;
+        // AUTO-TRIGGER ELIGIBILITY WORKFLOW
+        let eligibilityResult = null;
+        if (internshipId) {
+            console.log('[REGISTER] Auto-triggering Eligibility for ID:', internshipId);
+            try {
+                // Update tabel users dengan ipk dan semester dari form agar dibaca oleh VRule
+                const ipk = parseFloat(payload.ipk || payload.gpa || 0);
+                const semester = parseInt(payload.semester || 1);
+                if (ipk > 0) {
+                    await db.run('UPDATE users SET gpa = ?, semester = ? WHERE email = ?', [ipk, semester, payload.email]);
+                }
 
-        await audit.log({
-            action: 'REGISTER_INTERNSHIP_VFLOW',
-            data: {
-                path: vflow.config.paths.registration,
-                email: payload.email,
-                nim: payload.nim,
-                status: workflowStatus,
-                vflowResponse: vflowData,
-            },
-        });
+                eligibilityResult = await vflow.triggerWorkflow("wf_eligibility", { internship_id: internshipId });
+                if (eligibilityResult && eligibilityResult.rawBytes === 0) throw new Error("0 bytes from Eligibility SSE");
+            } catch (eligErr) {
+                console.error('[REGISTER] Auto-trigger Eligibility (VFlow) error:', eligErr.message);
+                if (vflow.config.fallbackLocal) {
+                    console.log('[REGISTER] Falling back to local Eligibility workflow');
+                    eligibilityResult = await workflow.trigger("wf_eligibility", { internshipId });
+                }
+            }
+        }
 
         res.json({
             success: true,
-            source: 'vflow',
-            message: 'Pendaftaran berhasil dikirim dan diproses melalui VFlow',
+            source,
+            message: 'Pendaftaran berhasil, dan proses seleksi kelayakan otomatis dijalankan.',
             data: {
                 vflow: vflowResult,
+                localResult,
                 internshipId,
                 registrationStatus: workflowStatus,
+                eligibilityStatus: eligibilityResult ? (eligibilityResult.data || eligibilityResult) : null,
                 uploadedFiles: uploadedDocs.map(f => f.originalname),
             }
         });

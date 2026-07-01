@@ -1,0 +1,158 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-registration
+  name: "Kelompok 1 - Internship Registration"
+  dialect: vflow
+  tags: [kelompok1, internship, registration]
+
+# Workflow 1: Internship Registration
+# Trigger: POST /webhook/kelompok1/internship/register
+# Input: { name, nim, email, prodi, year, phone, motivation, skills }
+# Logika:
+#   1. Cek user sudah ada di tabel users (harus sudah punya akun)
+#   2. Cek apakah sudah ada internship aktif
+#   3. INSERT ke tabel internships (bukan users)
+# Output: { internship_id, status }
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/internship/register
+          method: POST
+        response_framing: length_prefixed
+        end_activity: respond
+      output_variable: trigger_payload
+
+    # Cek apakah user ada di tabel users (harus sudah punya akun)
+    - id: check_user
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT id, email, name FROM users WHERE email = $1 LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.email]"
+      output_variable: user_check
+
+    # Cek apakah sudah ada internship aktif (status NOT IN rejected/completed)
+    - id: check_existing
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT id, status FROM internships WHERE user_email = $1 AND status NOT IN ('rejected', 'completed', 'ditolak', 'selesai') LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.email]"
+      output_variable: existing_check
+
+    # Validasi hasil cek & tentukan langkah berikutnya
+    - id: validate
+      activity_type: Transform
+      input_mappings:
+        - target: result
+          source:
+            language: v-cel
+            source: |
+              {
+                "user_found": (user_check.rows != null && user_check.rows.length > 0),
+                "has_active": (existing_check.rows != null && existing_check.rows.length > 0),
+                "user_id": (user_check.rows != null && user_check.rows.length > 0) ? user_check.rows[0].id : 0,
+                "skills_str": trigger_payload.skills,
+                "can_register": (user_check.rows != null && user_check.rows.length > 0) && !(existing_check.rows != null && existing_check.rows.length > 0)
+              }
+      output_variable: validation
+
+    # INSERT ke tabel internships — sesuai schema aktual
+    - id: insert_internship
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "INSERT INTO internships (user_email, name, nim, prodi, year, phone, motivation, skills, status, progress, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', 0, NOW(), NOW()) RETURNING id"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                trigger_payload.email,
+                trigger_payload.name,
+                trigger_payload.nim,
+                trigger_payload.prodi,
+                trigger_payload.year,
+                trigger_payload.phone,
+                trigger_payload.motivation,
+                trigger_payload.skills
+              ]
+      output_variable: insert_result
+
+    # Shape final response
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: |
+              {
+                "status": "success",
+                "workflow": "registration",
+                "internship_id": insert_result.rows[0].id,
+                "internship_status": "pending",
+                "message": "Pendaftaran magang berhasil, menunggu proses seleksi",
+                "data": {
+                  "name": trigger_payload.name,
+                  "nim": trigger_payload.nim,
+                  "email": trigger_payload.email,
+                  "prodi": trigger_payload.prodi
+                },
+                "source": "vflow"
+              }
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger },          to: { node: check_user } }
+    - { id: f2, from: { node: check_user },        to: { node: check_existing } }
+    - { id: f3, from: { node: check_existing },    to: { node: validate } }
+    - { id: f4, from: { node: validate },          to: { node: insert_internship } }
+    - { id: f5, from: { node: insert_internship }, to: { node: shape_response } }
+    - { id: f6, from: { node: shape_response },    to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload,   type: object }
+    - { name: user_check,        type: object }
+    - { name: existing_check,    type: object }
+    - { name: validation,        type: object }
+    - { name: insert_result,     type: object }
+    - { name: final_response,    type: object }

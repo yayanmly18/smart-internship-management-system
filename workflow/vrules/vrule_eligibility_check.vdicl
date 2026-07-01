@@ -1,0 +1,90 @@
+version: 1
+decision_id: vrule_eligibility_check
+decision_name: "Kelompok 1 - Eligibility Check"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: gpa
+      type: number
+      expression: applicant.gpa
+    - name: semester
+      type: number
+      expression: applicant.semester
+  outputs:
+    - name: decision
+      type: string
+    - name: eligible
+      type: boolean
+
+rules:
+  - id: r_eligible
+    priority: 10
+    enabled: true
+    description: "Mahasiswa eligible jika GPA >= 3.0 DAN semester >= 5"
+    when: gpa >= 3.0 AND semester >= 5
+    then:
+      - kind: SET_FIELD
+        path: decision
+        value: "ELIGIBLE"
+      - kind: SET_FIELD
+        path: eligible
+        value: true
+      - kind: ADD_SCORE
+        score_delta: 100
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_low_gpa
+    priority: 5
+    enabled: true
+    description: "Tidak eligible jika GPA < 3.0"
+    when: gpa < 3.0
+    then:
+      - kind: SET_FIELD
+        path: decision
+        value: "NOT_ELIGIBLE"
+      - kind: SET_FIELD
+        path: eligible
+        value: false
+      - kind: EMIT
+        severity: ERROR
+        code: GPA_BELOW_MINIMUM
+        field: applicant.gpa
+        msg: "GPA di bawah minimum 3.0"
+      - kind: SET_DECISION
+        decision: REJECT
+
+  - id: r_low_semester
+    priority: 4
+    enabled: true
+    description: "Tidak eligible jika semester < 5"
+    when: semester < 5
+    then:
+      - kind: SET_FIELD
+        path: decision
+        value: "NOT_ELIGIBLE"
+      - kind: SET_FIELD
+        path: eligible
+        value: false
+      - kind: EMIT
+        severity: ERROR
+        code: SEMESTER_BELOW_MINIMUM
+        field: applicant.semester
+        msg: "Semester di bawah minimum 5"
+      - kind: SET_DECISION
+        decision: REJECT
+
+  - id: r_fallback
+    priority: 0
+    enabled: true
+    description: "Fallback — semua kondisi lain dianggap tidak eligible"
+    when: true
+    then:
+      - kind: SET_FIELD
+        path: decision
+        value: "NOT_ELIGIBLE"
+      - kind: SET_FIELD
+        path: eligible
+        value: false
+      - kind: SET_DECISION
+        decision: REJECT

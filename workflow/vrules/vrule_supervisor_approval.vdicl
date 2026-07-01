@@ -1,0 +1,64 @@
+version: 1
+decision_id: vrule_supervisor_approval
+decision_name: "Kelompok 1 - Supervisor Approval"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: admin_verification_status
+      type: string
+      expression: internship.admin_verification_status
+    - name: supervisor_decision
+      type: string
+      expression: supervisor.decision
+  outputs:
+    - name: approval_status
+      type: string
+
+rules:
+  - id: r_approved
+    priority: 20
+    enabled: true
+    description: "Approved jika sudah lolos admin verifikasi dan disetujui supervisor"
+    when: admin_verification_status == "ADMIN_VERIFIED" AND supervisor_decision == "APPROVED"
+    then:
+      - kind: SET_FIELD
+        path: approval_status
+        value: "SUPERVISOR_APPROVED"
+      - kind: ADD_SCORE
+        score_delta: 25
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_rejected_by_supervisor
+    priority: 15
+    enabled: true
+    description: "Ditolak langsung oleh supervisor"
+    when: supervisor_decision == "REJECTED"
+    then:
+      - kind: SET_FIELD
+        path: approval_status
+        value: "REJECTED"
+      - kind: EMIT
+        severity: ERROR
+        code: SUPERVISOR_REJECTED
+        field: supervisor.decision
+        msg: "Dosen Pembimbing menolak pengajuan magang"
+      - kind: SET_DECISION
+        decision: REJECT
+
+  - id: r_admin_not_verified
+    priority: 10
+    enabled: true
+    description: "Admin belum verifikasi"
+    when: admin_verification_status != "ADMIN_VERIFIED"
+    then:
+      - kind: SET_FIELD
+        path: approval_status
+        value: "REJECTED"
+      - kind: EMIT
+        severity: ERROR
+        code: ADMIN_VERIFICATION_NOT_PASSED
+        field: internship.admin_verification_status
+        msg: "Status admin belum terverifikasi"
+      - kind: SET_DECISION
+        decision: REJECT

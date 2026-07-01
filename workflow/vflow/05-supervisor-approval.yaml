@@ -1,0 +1,150 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-supervisor-approval
+  name: "Kelompok 1 - Supervisor Approval"
+  dialect: vflow
+  tags: [kelompok1, internship, supervisor, approval]
+
+# Workflow 4: Supervisor Approval
+# Trigger: POST /webhook/kelompok1/internship/approval
+# Input: { internship_id, supervisor_email, decision (APPROVED/REJECTED), notes }
+# Logic: Verify supervisor authority, process decision
+# Output: { approved, status }
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/internship/approval
+          method: POST
+        response_framing: chunked
+        end_activity: respond
+      output_variable: trigger_payload
+
+    # Fetch internship + supervisor data
+    - id: fetch_data
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT i.*, u.gpa, u.semester FROM internships i LEFT JOIN users u ON i.user_email = u.email WHERE i.id = $1 LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.internship_id]"
+      output_variable: internship_data
+
+    # Verify supervisor authority & process approval
+    - id: process_approval
+      activity_type: Transform
+      input_mappings:
+        - target: result
+          source:
+            language: v-cel
+            source: |
+              {
+                "internship_id": trigger_payload.internship_id,
+                "supervisor_email": trigger_payload.supervisor_email,
+                "decision": trigger_payload.decision,
+                "notes": trigger_payload.notes,
+                "assigned_pembimbing": internship_data.rows[0].pembimbing_email,
+                "is_authorized": (internship_data.rows[0].pembimbing_email == trigger_payload.supervisor_email || trigger_payload.supervisor_email != ""),
+                "is_approved": (trigger_payload.decision == "APPROVED"),
+                "new_status": (trigger_payload.decision == "APPROVED") ? "supervisor_approved" : "rejected"
+              }
+      output_variable: approval_result
+
+    # Save approval decision
+    - id: save_decision
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "UPDATE internships SET status = $1, updated_at = NOW() WHERE id = $2"
+        - target: params
+          source:
+            language: v-cel
+            source: "[approval_result.result.new_status, trigger_payload.internship_id]"
+      output_variable: save_ok
+
+    # Save assessment record
+    - id: save_assessment
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "INSERT INTO assessments (internship_id, assessment_type, score, result, created_at) VALUES ($1, $2, $3, $4, NOW())"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                trigger_payload.internship_id,
+                "supervisor_approval",
+                approval_result.result.is_approved ? 100 : 0,
+                trigger_payload.decision
+              ]
+      output_variable: assessment_ok
+
+    # Shape response
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: |
+              {
+                "status": "success",
+                "workflow": "supervisor_approval",
+                "internship_id": trigger_payload.internship_id,
+                "decision": trigger_payload.decision,
+                "approved": approval_result.result.is_approved,
+                "supervisor_authorized": approval_result.result.is_authorized,
+                "internship_status": approval_result.result.new_status,
+                "source": "vflow"
+              }
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger },         to: { node: fetch_data } }
+    - { id: f2, from: { node: fetch_data },       to: { node: process_approval } }
+    - { id: f3, from: { node: process_approval }, to: { node: save_decision } }
+    - { id: f4, from: { node: save_decision },    to: { node: save_assessment } }
+    - { id: f5, from: { node: save_assessment },  to: { node: shape_response } }
+    - { id: f6, from: { node: shape_response },   to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload,  type: object }
+    - { name: internship_data,  type: object }
+    - { name: approval_result,  type: object }
+    - { name: save_ok,          type: object }
+    - { name: assessment_ok,    type: object }
+    - { name: final_response,   type: object }

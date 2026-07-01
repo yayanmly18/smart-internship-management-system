@@ -1,0 +1,154 @@
+version: "3.0"
+metadata:
+  id: kelompok1-internship-certification
+  name: "Kelompok 1 - Certification & Completion"
+  dialect: vflow
+  tags: [kelompok1, internship, certification, completion]
+
+# Workflow 8: Certification & Completion
+# Trigger: POST /webhook/kelompok1/internship/certification
+# Input: { internship_id }
+# Logic: Check score >= 60, generate certificate code, mark as completed
+# Output: { certificate_id, certificate_code, final_grade, status }
+
+spec:
+  activities:
+    - id: trigger
+      activity_type: Trigger
+      trigger_config:
+        trigger_type: webhook
+        runtime_mode: standard
+        webhook_config:
+          path: /webhook/kelompok1/internship/certification
+          method: POST
+        response_framing: chunked
+        end_activity: respond
+      output_variable: trigger_payload
+
+    # Fetch internship data (must have grade)
+    - id: fetch_internship
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "SELECT i.id, i.user_email, i.name, i.nim, i.company, i.final_score, i.grade, i.status FROM internships i WHERE i.id = $1 LIMIT 1"
+        - target: params
+          source:
+            language: v-cel
+            source: "[trigger_payload.internship_id]"
+      output_variable: internship_data
+
+    # Validate & generate cert code
+    - id: gen_certificate
+      activity_type: Transform
+      input_mappings:
+        - target: result
+          source:
+            language: v-cel
+            source: |
+              {
+                "internship_id": trigger_payload.internship_id,
+                "user_email": internship_data.rows[0].user_email,
+                "name": internship_data.rows[0].name,
+                "company": internship_data.rows[0].company,
+                "final_score": internship_data.rows[0].final_score,
+                "grade": internship_data.rows[0].grade,
+                "can_certify": (internship_data.rows[0].final_score >= 60 || internship_data.rows[0].grade != "E"),
+                "cert_code": "CERT-2026-" + string(trigger_payload.internship_id)
+              }
+      output_variable: cert_result
+
+    # Save certificate record
+    - id: save_certificate
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "INSERT INTO certificates (internship_id, user_email, certificate_code, final_score, grade, issued_at) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id"
+        - target: params
+          source:
+            language: v-cel
+            source: |
+              [
+                trigger_payload.internship_id,
+                cert_result.result.user_email,
+                cert_result.result.cert_code,
+                cert_result.result.final_score,
+                cert_result.result.grade
+              ]
+      output_variable: cert_save
+
+    # Update internship as completed
+    - id: mark_completed
+      activity_type: Connector
+      connector_config:
+        connector_ref: "pack://kelompok1/internship/primary"
+        operation: raw_query
+        timeout_ms: 5000
+      input_mappings:
+        - target: sql
+          source:
+            language: literal
+            source: "UPDATE internships SET status = 'completed', certificate_code = $1, updated_at = NOW() WHERE id = $2"
+        - target: params
+          source:
+            language: v-cel
+            source: "[cert_result.result.cert_code, trigger_payload.internship_id]"
+      output_variable: update_ok
+
+    # Shape response
+    - id: shape_response
+      activity_type: Transform
+      input_mappings:
+        - target: response
+          source:
+            language: v-cel
+            source: |
+              {
+                "status": "success",
+                "workflow": "certification",
+                "internship_id": trigger_payload.internship_id,
+                "certificate_id": cert_save.rows[0].id,
+                "certificate_code": cert_result.result.cert_code,
+                "final_grade": cert_result.result.grade,
+                "final_score": cert_result.result.final_score,
+                "student_name": cert_result.result.name,
+                "company": cert_result.result.company,
+                "internship_status": "completed",
+                "source": "vflow"
+              }
+      output_variable: final_response
+
+    - id: respond
+      activity_type: EndTrigger
+      end_trigger_config:
+        trigger_ref: trigger
+        final_response:
+          language: spv1
+          source: "$.final_response"
+
+  flows:
+    - { id: f1, from: { node: trigger },          to: { node: fetch_internship } }
+    - { id: f2, from: { node: fetch_internship },  to: { node: gen_certificate } }
+    - { id: f3, from: { node: gen_certificate },   to: { node: save_certificate } }
+    - { id: f4, from: { node: save_certificate },  to: { node: mark_completed } }
+    - { id: f5, from: { node: mark_completed },    to: { node: shape_response } }
+    - { id: f6, from: { node: shape_response },    to: { node: respond } }
+
+  variables:
+    - { name: trigger_payload, type: object }
+    - { name: internship_data, type: object }
+    - { name: cert_result,     type: object }
+    - { name: cert_save,       type: object }
+    - { name: update_ok,       type: object }
+    - { name: final_response,  type: object }

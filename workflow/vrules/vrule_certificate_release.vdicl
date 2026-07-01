@@ -1,0 +1,62 @@
+version: 1
+decision_id: vrule_certificate_release
+decision_name: "Kelompok 1 - Certificate Release"
+hit_policy: FIRST
+schema:
+  inputs:
+    - name: grading_status
+      type: string
+      expression: evaluation.grading_status
+    - name: administrative_clearance
+      type: boolean
+      expression: administration.clearance
+  outputs:
+    - name: release_status
+      type: string
+
+rules:
+  - id: r_release_granted
+    priority: 10
+    enabled: true
+    description: "Sertifikat dirilis jika lulus dan bebas tanggungan administrasi"
+    when: grading_status == "PASS" AND administrative_clearance == true
+    then:
+      - kind: SET_FIELD
+        path: release_status
+        value: "RELEASED"
+      - kind: SET_DECISION
+        decision: ACCEPT
+
+  - id: r_not_passed
+    priority: 5
+    enabled: true
+    description: "Sertifikat tidak dirilis karena tidak lulus"
+    when: grading_status != "PASS"
+    then:
+      - kind: SET_FIELD
+        path: release_status
+        value: "HOLD"
+      - kind: EMIT
+        severity: ERROR
+        code: GRADING_NOT_PASSED
+        field: evaluation.grading_status
+        msg: "Mahasiswa tidak lulus evaluasi performa"
+      - kind: SET_DECISION
+        decision: REJECT
+
+  - id: r_admin_hold
+    priority: 4
+    enabled: true
+    description: "Sertifikat ditahan karena masalah administrasi"
+    when: administrative_clearance == false
+    then:
+      - kind: SET_FIELD
+        path: release_status
+        value: "HOLD"
+      - kind: EMIT
+        severity: WARN
+        code: ADMIN_HOLD
+        field: administration.clearance
+        msg: "Ada tanggungan administrasi yang belum diselesaikan"
+      - kind: SET_DECISION
+        decision: REVIEW
