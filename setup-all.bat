@@ -219,10 +219,7 @@ echo.
 echo Access URLs:
 echo   - Frontend: http://localhost:5173
 echo   - Backend: http://localhost:3000
-echo   - VFlow: https://sqavflow.vastar.id/webhook/kelompok1/internship/register-test
 echo.
 echo Default admin: admin@example.com / adminpass
-echo.
-echo Remember to run 'bash setup-env.sh' in new terminal sessions!
 echo.
 pause
